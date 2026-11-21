@@ -22,8 +22,10 @@ from ballbrawlla.physics.vec import Vector2
 
 
 class Player:
-    def __init__(self, spawn_center: Vector2, tuning: Tuning) -> None:
+    def __init__(self, spawn_center: Vector2, tuning: Tuning, pid: int = 0) -> None:
         self.t = tuning
+        self.pid = pid
+        self.connected = True  # False for an empty network slot: not simulated, drawn dimmed
         self.w = tuning.player_width
         self.h = tuning.player_height
         top_left = Vector2(spawn_center.x - self.w / 2, spawn_center.y - self.h / 2)
@@ -37,6 +39,7 @@ class Player:
 
         self.held_ball: Ball | None = None
         self.ball: Ball | None = None  # the ball in the world, set each tick
+        self.pickup_requested = False  # resolved by Game after all players update
         self.aim_angle = 45.0          # degrees, 0 = right, 90 = up (full circle)
         self.aim_power = (tuning.power_min + tuning.power_max) / 2
 
@@ -87,12 +90,11 @@ class Player:
             and self.center.distance_to(b.pos) <= self.t.pickup_radius
         )
 
-    def try_pickup(self) -> bool:
-        if not self.ball_in_reach():
-            return False
-        self.held_ball = self.ball
-        self.ball.held_by = self
-        return True
+    def try_pickup(self) -> None:
+        """Request the ball. Game grants it at the end of the tick (closest
+        requester wins if two players reach for it at once)."""
+        if self.ball_in_reach():
+            self.pickup_requested = True
 
     def aim_direction(self) -> Vector2:
         a = math.radians(self.aim_angle)

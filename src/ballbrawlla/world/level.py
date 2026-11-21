@@ -25,8 +25,9 @@ class Level:
     height: float
     platforms: list[Platform] = field(default_factory=list)
     wall_thickness: float = 32
-    player_spawn: Vector2 = field(default_factory=lambda: Vector2(100, 100))  # player center
-    ball_spawn: Vector2 = field(default_factory=lambda: Vector2(200, 100))    # ball center
+    # Player centers, one per player slot (reused round-robin if there are fewer).
+    player_spawns: list[Vector2] = field(default_factory=lambda: [Vector2(100, 100)])
+    ball_spawn: Vector2 = field(default_factory=lambda: Vector2(200, 100))  # ball center
     name: str = "untitled"
 
     def __post_init__(self) -> None:
@@ -40,15 +41,41 @@ class Level:
         self.platforms = [Platform(r, "bound") for r in bounds] + self.platforms
         self.solids: list[AABB] = [p.rect for p in self.platforms]
 
+    def spawn_for(self, player_index: int) -> Vector2:
+        return Vector2(self.player_spawns[player_index % len(self.player_spawns)])
 
-def load_level(path: str | Path) -> Level:
-    data = json.loads(Path(path).read_text())
+
+def level_from_dict(data: dict) -> Level:
+    spawns = data.get("player_spawns") or [data["player_spawn"]]
     return Level(
         width=data["width"],
         height=data["height"],
         wall_thickness=data.get("wall_thickness", 32),
         platforms=[Platform(AABB(p["x"], p["y"], p["w"], p["h"])) for p in data["platforms"]],
-        player_spawn=Vector2(data["player_spawn"]),
+        player_spawns=[Vector2(s) for s in spawns],
         ball_spawn=Vector2(data["ball_spawn"]),
-        name=data.get("name", Path(path).stem),
+        name=data.get("name", "untitled"),
     )
+
+
+def level_to_dict(level: Level) -> dict:
+    """Inverse of level_from_dict (boundary walls are regenerated, so omitted)."""
+    return {
+        "name": level.name,
+        "width": level.width,
+        "height": level.height,
+        "wall_thickness": level.wall_thickness,
+        "player_spawns": [[s.x, s.y] for s in level.player_spawns],
+        "ball_spawn": [level.ball_spawn.x, level.ball_spawn.y],
+        "platforms": [
+            {"x": p.rect.x, "y": p.rect.y, "w": p.rect.w, "h": p.rect.h}
+            for p in level.platforms
+            if p.kind == "platform"
+        ],
+    }
+
+
+def load_level(path: str | Path) -> Level:
+    data = json.loads(Path(path).read_text())
+    data.setdefault("name", Path(path).stem)
+    return level_from_dict(data)

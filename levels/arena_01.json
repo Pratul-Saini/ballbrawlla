@@ -3,7 +3,7 @@
   "width": 1280,
   "height": 720,
   "wall_thickness": 32,
-  "player_spawn": [200, 650],
+  "player_spawns": [[200, 650], [1080, 650]],
   "ball_spawn": [640, 120],
   "platforms": [
     {"x": 200,  "y": 550, "w": 220, "h": 20},

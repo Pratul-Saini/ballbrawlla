@@ -11,6 +11,7 @@ from dataclasses import dataclass
 class Tuning:
     # --- Simulation ---
     physics_hz: int = 120
+    max_players: int = 2  # network play: host + (max_players - 1) clients
 
     # --- Player body ---
     player_width: float = 28
