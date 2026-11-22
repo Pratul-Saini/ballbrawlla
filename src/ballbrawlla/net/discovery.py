@@ -16,6 +16,7 @@ import time
 from dataclasses import dataclass
 
 from ballbrawlla.net.protocol import PROTOCOL_VERSION
+from ballbrawlla.version import __version__
 
 DISCOVERY_PORT = 50556
 MAGIC = "ballbrawlla-game"
@@ -30,6 +31,7 @@ class FoundGame:
     port: int
     name: str
     level: str
+    version: str = ""
 
 
 def _clean(value: object) -> str:
@@ -37,7 +39,8 @@ def _clean(value: object) -> str:
 
 
 def encode(name: str, level: str, port: int) -> bytes:
-    return json.dumps({"magic": MAGIC, "v": PROTOCOL_VERSION, "name": name, "level": level, "port": port},
+    return json.dumps({"magic": MAGIC, "v": PROTOCOL_VERSION, "game": __version__, "name": name, "level": level,
+                       "port": port},
                       separators=(",", ":")).encode()
 
 
@@ -50,7 +53,8 @@ def decode(data: bytes, sender: str) -> FoundGame | None:
         port = msg.get("port")
         if not isinstance(port, int) or isinstance(port, bool) or not 1024 <= port <= 65535:
             return None
-        return FoundGame(sender, port, _clean(msg.get("name", "")) or sender, _clean(msg.get("level", "")))
+        return FoundGame(sender, port, _clean(msg.get("name", "")) or sender, _clean(msg.get("level", "")),
+                         _clean(msg.get("game", "")))
     except (ValueError, UnicodeDecodeError):
         return None
 

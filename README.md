@@ -20,6 +20,12 @@ pytest                          # physics, player, rules, match, network and lev
                                 #   the skill-route sweeps are most of it)
 ```
 
+## Menu and packaged builds
+
+`python -m ballbrawlla` with no flags opens the menu (Play > Free play, Two players, Online). Flags such as
+`--level field_05`, `--catch`, `--local`, `--host`, `--join ADDR` still work. To build an app you can send to a friend
+(Mac or Windows) and for first-run notes, see [docs/packaging.md](docs/packaging.md).
+
 ## Session notes
 
 Press **F2** in any mode to write notes about the session you're playing (playtest feedback,

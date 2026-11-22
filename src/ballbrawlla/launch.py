@@ -17,10 +17,11 @@ from pathlib import Path
 from ballbrawlla.config import TUNING
 from ballbrawlla.net.invite import check_code, check_relay
 from ballbrawlla.net.protocol import DEFAULT_PORT
+from ballbrawlla.paths import levels_dir
 from ballbrawlla.rules.field import Field
 from ballbrawlla.world.level import Level, level_from_dict, load_level
 
-LEVELS = Path(__file__).resolve().parents[2] / "levels"
+LEVELS = levels_dir()
 MATCH_MODES = ("practice", "catch", "local", "host", "host_online")  # football rules: need a football field
 ALL_MODES = ("practice", "catch", "local", "host", "join", "host_online", "join_code", "sandbox")
 MODE_LABELS = {

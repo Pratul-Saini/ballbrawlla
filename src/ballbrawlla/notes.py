@@ -19,8 +19,9 @@ from pathlib import Path
 import pygame
 
 from ballbrawlla.input import Intent
+from ballbrawlla.paths import logs_dir
 
-LOGS = Path(__file__).resolve().parents[2] / "logs" / "sessions"
+LOGS = logs_dir() / "sessions"
 TOGGLE_KEY = pygame.K_F2
 
 

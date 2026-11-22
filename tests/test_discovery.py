@@ -10,6 +10,7 @@ from ballbrawlla.net.discovery import (
     BEACON_INTERVAL, GAME_TIMEOUT, MAGIC, Beacon, Finder, FoundGame, decode, encode,
 )
 from ballbrawlla.net.protocol import PROTOCOL_VERSION
+from ballbrawlla.version import __version__
 
 
 def free_udp_port():
@@ -22,7 +23,7 @@ def free_udp_port():
 
 def test_roundtrip_uses_sender_address():
     game = decode(encode("Kris", "Field 05", 50555), "10.0.0.9")
-    assert game == FoundGame("10.0.0.9", 50555, "Kris", "Field 05")
+    assert game == FoundGame("10.0.0.9", 50555, "Kris", "Field 05", __version__)
 
 
 @pytest.mark.parametrize("data", [
