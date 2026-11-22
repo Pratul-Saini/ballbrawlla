@@ -67,6 +67,7 @@ class Grounded(State):
     def enter(self, p: Player) -> None:
         p.jumps_left = p.t.air_jumps
         p.control_lock = 0.0
+        p.last_wall = None  # back on the ground: any wall can be grabbed again
 
     def update(self, p: Player, intent: Intent, dt: float) -> State | None:
         if not p.contacts.on_ground:
@@ -98,11 +99,12 @@ class Airborne(State):
             _face(p, intent.move_x)
 
         # Press into a wall to stick to it - unless this jump is going to carry you
-        # over it anyway (ledge assist: running up steps doesn't get you stuck).
-        if p.contacts.wall_left and intent.move_x < 0 and not p.will_clear_wall(-1, intent.up_held):
-            return WallCling(-1)
-        if p.contacts.wall_right and intent.move_x > 0 and not p.will_clear_wall(1, intent.up_held):
-            return WallCling(1)
+        # over it anyway (ledge assist: running up steps doesn't get you stuck), or it's
+        # the wall you last clung to (grab a different wall or land first).
+        for side, touching, pressing in ((-1, p.contacts.wall_left, intent.move_x < 0),
+                                         (1, p.contacts.wall_right, intent.move_x > 0)):
+            if touching and pressing and not p.will_clear_wall(side, intent.up_held) and p.can_cling(side):
+                return WallCling(side)
 
         if intent.jump_pressed and p.jumps_left > 0:
             p.jumps_left -= 1
@@ -122,6 +124,7 @@ class WallCling(State):
         self.side = side  # -1 wall on the left, +1 wall on the right
 
     def enter(self, p: Player) -> None:
+        p.last_wall = p.touching_wall(self.side)
         p.vel.update(0, 0)  # stick
         p.jumps_left = p.t.air_jumps
         p.jump_cut_ready = False

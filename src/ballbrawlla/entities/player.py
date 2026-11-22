@@ -42,6 +42,9 @@ class Player:
         self.control_lock = 0.0       # seconds of ignored air control (after wall jump)
 
         self.held_ball: Ball | None = None
+        # The wall I last clung to. I can't cling to it again until I've clung to a
+        # different wall or landed (no climbing one wall by re-grabbing it).
+        self.last_wall: AABB | None = None
         self.ball: Ball | None = None  # the ball in the world, set each tick
         self.pickup_requested = False  # resolved by Game after all players update
         self.pickup_buffer = 0         # ticks left on an armed Z press
@@ -83,6 +86,20 @@ class Player:
         self.body.pos.y += dy
         self.h = new_h
         return True
+
+    # ------------------------------------------------------------ walls
+
+    def touching_wall(self, side: int) -> AABB | None:
+        """The solid I'm pressed against on `side` (-1 left, +1 right), if any."""
+        probe = self.box.shifted(side, 0)
+        hits = [s for s in self._solids if probe.overlaps(s)]
+        if not hits:
+            return None
+        return max(hits, key=lambda s: min(s.bottom, probe.bottom) - max(s.top, probe.top))
+
+    def can_cling(self, side: int) -> bool:
+        wall = self.touching_wall(side)
+        return wall is not None and wall is not self.last_wall
 
     def will_clear_wall(self, side: int, up_held: bool = True) -> bool:
         """True if the rest of the current upward motion will lift my feet above the

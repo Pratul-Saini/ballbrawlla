@@ -57,11 +57,12 @@ Each state's `update` runs before physics for the tick. It sets velocity and ret
 - Lands (becomes Grounded) when `on_ground` is true and `vel.y >= 0`.
 - Steering: `vel.x = move_x * air_speed` (320 px/s), unless `control_lock` is running.
 - Pressing into a wall (`wall_left` with left held, or `wall_right` with right held) becomes WallCling, unless the rest of the current jump will carry the feet above that wall's top (**ledge assist**, `Player.will_clear_wall`). Running up a step you can clear never sticks you to its face.
+- **One cling per wall:** you can't cling to the wall you last clung to (`Player.last_wall`) until you've clung to a different wall or landed. Wall-jumping off a wall and steering back into it just slides you past it; bouncing between two walls (a chimney) still works.
 - Up with air jumps left: double jump, `vel.y = -double_jump_speed` (680 px/s), costing one air jump. This **replaces** the vertical velocity, so doing it near the apex gains the most.
 - **Jump cut:** after a jump, releasing Up while still rising multiplies `vel.y` by 0.5 once. A short tap gives a short hop. Holding Up gives the full jump.
 
 ### WallCling
-- Entered from Airborne by pressing into a wall. On entry: velocity zeroed, air jumps refilled, player turns to face away from the wall.
+- Entered from Airborne by pressing into a wall. On entry: the wall is remembered as `last_wall`, velocity zeroed, air jumps refilled, player turns to face away from the wall.
 - Leaves to Grounded if on the ground, or to Airborne if the wall is gone.
 - `vel.x` is held at 0.
 - **Wall jump:** press away from the wall. Sets velocity to (380 px/s away, -720 px/s up), locks air control for 0.18 s, becomes Airborne.
