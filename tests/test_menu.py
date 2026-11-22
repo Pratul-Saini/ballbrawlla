@@ -73,6 +73,11 @@ def relay_env(monkeypatch):
     from ballbrawlla.net import invite
     monkeypatch.setattr(invite, "DEFAULT_RELAY", "")
     monkeypatch.setenv(invite.RELAY_ENV, "relay.example.com")
+    # These tests are about the relay, not the game port: a real game running on this machine (port 50555 in
+    # use) must not grey out "Host online game" and fail them.
+    from ballbrawlla import launch, menu
+    monkeypatch.setattr(launch, "check_port", lambda port: None)
+    monkeypatch.setattr(menu, "check_port", lambda port: None)
     return monkeypatch
 
 

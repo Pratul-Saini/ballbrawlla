@@ -1,0 +1,50 @@
+# Tests the Godot port and builds the Mac and Windows apps, as downloads on the run's page. Run it by hand
+# (Actions tab > Godot > Run workflow), on a pull request that changes godot/, or push a tag like v0.2.0.
+#
+# NOTE: written without being able to run it. The Godot commands are the ones used locally (godot/run_tests.sh and
+# tools/build_godot_app.py), which are tested on macOS. If the first run fails, the log says where.
+name: Godot
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ["godot/**", "tools/**", ".github/workflows/godot.yml"]
+  push:
+    tags: ["v*"]
+
+env:
+  GODOT_VERSION: "4.7.2-stable"
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Godot and its export templates
+        run: |
+          set -e
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}"
+          curl -fsSL -o godot.zip "$base/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
+          unzip -q godot.zip
+          sudo mv "Godot_v${GODOT_VERSION}_linux.x86_64" /usr/local/bin/godot
+          curl -fsSL -o templates.tpz "$base/Godot_v${GODOT_VERSION}_export_templates.tpz"
+          dir="$HOME/.local/share/godot/export_templates/${GODOT_VERSION/-/.}"
+          mkdir -p "$dir"
+          unzip -q templates.tpz -d templates_tmp
+          cp -r templates_tmp/templates/* "$dir/"
+      - name: Test
+        run: GODOT=/usr/local/bin/godot godot/run_tests.sh 600
+      - name: Build the Mac and Windows apps
+        run: python tools/build_godot_app.py --godot /usr/local/bin/godot
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GridironScramble-godot
+          path: dist/godot/GridironScramble-godot-*.zip
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/godot/GridironScramble-godot-*.zip

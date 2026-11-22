@@ -20,6 +20,12 @@ pytest                          # physics, player, rules, match, network and lev
                                 #   the skill-route sweeps are most of it)
 ```
 
+## Godot version
+
+The game is also ported to Godot 4 (`godot/`), with the same rules, levels, menus and network play. See
+[docs/godot.md](docs/godot.md) for how to run it, how it was checked against this Python version, and how to build
+apps for Mac and Windows.
+
 ## Menu and packaged builds
 
 `python -m ballbrawlla` with no flags opens the menu (Play > Free play, Two players, Online). Flags such as
