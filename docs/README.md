@@ -9,13 +9,14 @@ This folder describes the game as it is implemented today. Each file covers one 
 | [ball.md](ball.md) | Ball physics and behavior: gravity, bounces, resting, held | `entities/ball.py` |
 | [catching-and-throwing.md](catching-and-throwing.md) | Picking the ball up (Z), aiming, throwing, the catch window | `entities/player.py`, `game.py` |
 | [level.md](level.md) | Level format, platform types, spawns, the bundled arena, design guidelines | `world/level.py`, `levels/arena_01.json` |
-| [networking.md](networking.md) | Host/join play, messages, snapshots, latency | `net/` |
-| [input-and-rendering.md](input-and-rendering.md) | Keyboard to Intent, the main loop, drawing | `input.py`, `main.py`, `render/` |
+| [networking.md](networking.md) | Host/join play, messages, per-player views, hidden information | `net/` |
+| [input-and-rendering.md](input-and-rendering.md) | Keyboard/mouse/controller to Intent, the game modes and loops, session notes, drawing | `input.py`, `gamepad.py`, `main.py`, `notes.py`, `render/` |
+| [../gameplay-rules.md](../gameplay-rules.md) | The football rules as built: downs, play call, execution, scoring, every field level | `rules/`, `session.py` |
 | [tuning.md](tuning.md) | Every gameplay number in `config.py` | `config.py` |
 
 ## The game in one paragraph
 
-Two players share a rectangular arena of platforms and one ball. You run, jump, double jump, cling to walls, crouch and slide. You pick the ball up with Z, aim with the arrow keys and throw with X. The ball is a bouncing circle under gravity. There is no scoring, goal or win condition yet. It is a movement and ball-physics prototype with local-network multiplayer.
+A 2-player football platformer. Each down has a play call (both sides run their QB / Defender into place and lock in, the offense aims the throw) and an execution (the WR and Defender run; the QB throws after 10 s; catch, tag, touchdown or interception). 4 downs per possession, first to 5 touchdowns. Players run, jump, double jump, wall-cling and climb, slide and crawl. Rules are in [../gameplay-rules.md](../gameplay-rules.md); the physics `Game` below is driven by the rules `Session`.
 
 ## How one tick works
 
