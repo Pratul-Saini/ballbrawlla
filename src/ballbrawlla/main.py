@@ -136,6 +136,8 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT) -> Non
                         session.new_match()
                     elif event.key == pygame.K_F1:
                         renderer.debug = not renderer.debug
+                    elif event.key == pygame.K_F3:
+                        renderer.show_controls = not renderer.show_controls
                 action = inputs.handle_event(event, renderer.button_hit)
                 if action == "restart":
                     session.new_match()
@@ -164,9 +166,10 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT) -> Non
                 for pid in server.clients:
                     server.send_to(pid, make_view(session, pid))
 
-            status = f"hosting on {address}" if server else "R / Options: restart   F1: debug   Esc: quit"
-            status += "   F2: notes" + _pad_status(inputs)
-            renderer.draw(make_view(session, 0), clock.get_fps(), frame_dt, status)
+            status = f"hosting on {address}" if server else ""
+            controls = ("R / Options: restart   F1: debug   F2: notes   F3: hide controls   Esc: quit"
+                        + _pad_status(inputs))
+            renderer.draw(make_view(session, 0), clock.get_fps(), frame_dt, status, controls)
             notes.draw(screen)
             pygame.display.flip()
     finally:
@@ -214,6 +217,8 @@ def run_couch(level: Level) -> None:
                     session.new_match()
                 elif event.key == pygame.K_F1:
                     renderer.debug = not renderer.debug
+                elif event.key == pygame.K_F3:
+                    renderer.show_controls = not renderer.show_controls
             action = pads.handle_event(event)
             if action == "restart":
                 session.new_match()
@@ -233,10 +238,10 @@ def run_couch(level: Level) -> None:
             accumulator -= dt
 
         names = pads.names
-        status = (f"Blue: {BLUE_KEYS.label}   Red: {RED_KEYS.label}   |   "
-                  + (f"controllers: {', '.join(names)}   |   " if names else "")
-                  + "F5: new match   F1: debug   F2: notes   Esc: quit")
-        renderer.draw(make_view(session, 0, local=True), clock.get_fps(), frame_dt, status)
+        controls = (f"Blue: {BLUE_KEYS.label}   Red: {RED_KEYS.label}   |   "
+                    + (f"controllers: {', '.join(names)}   |   " if names else "")
+                    + "F5: new match   F1: debug   F2: notes   F3: hide controls   Esc: quit")
+        renderer.draw(make_view(session, 0, local=True), clock.get_fps(), frame_dt, "", controls)
         notes.draw(screen)
         pygame.display.flip()
     notes.save()
@@ -278,6 +283,8 @@ def run_client(address: str, port: int = DEFAULT_PORT) -> None:
                         running = False
                     elif event.key == pygame.K_F1:
                         renderer.debug = not renderer.debug
+                    elif event.key == pygame.K_F3:
+                        renderer.show_controls = not renderer.show_controls
                 if inputs.handle_event(event, renderer.button_hit) == "debug":
                     renderer.debug = not renderer.debug
 
@@ -293,9 +300,9 @@ def run_client(address: str, port: int = DEFAULT_PORT) -> None:
             status = f"connected to {address}:{port}"
             if client.closed:
                 status = "disconnected from host - press Esc to quit"
-            status += "   F2: notes" + _pad_status(inputs)
+            controls = "F1: debug   F2: notes   F3: hide controls   Esc: quit" + _pad_status(inputs)
             if view is not None:
-                renderer.draw(view, clock.get_fps(), frame_dt, status)
+                renderer.draw(view, clock.get_fps(), frame_dt, status, controls)
             notes.draw(screen)
             pygame.display.flip()
     finally:
@@ -336,6 +343,8 @@ def run_sandbox(level: Level) -> None:
                     game.reset()
                 elif event.key == pygame.K_F1:
                     renderer.debug = not renderer.debug
+                elif event.key == pygame.K_F3:
+                    renderer.show_controls = not renderer.show_controls
             action = inputs.handle_event(event)
             if action == "restart":
                 game.reset()

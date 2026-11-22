@@ -51,7 +51,8 @@ spawn. The camera zooms out (down to 40%) to keep both players in view, and the 
 
 During the play call the **mouse belongs to whichever side is on offense** (aiming the throw and
 the on-screen button). **F5** or a controller's **Options** starts a new match. R is not used here,
-because it sits next to Blue's keys. F1 toggles the debug overlay and Esc quits.
+because it sits next to Blue's keys. F1 toggles the debug overlay, F3 hides or shows the controls HUD,
+and Esc quits.
 
 ## Local network play (2 players)
 
@@ -92,7 +93,7 @@ python -m ballbrawlla --join 192.168.x.y   # machine B
 | ↑ | Jump / double jump / hop up a wall |
 | ↓ | Crouch (standing) / slide (running); hold ←/→ while crouched to crawl |
 | Z | Catch / pick up the ball · tag the opponent carrying the ball |
-| R / F1 / Esc | New match (practice / host only) · debug overlay · quit |
+| R / F1 / F2 / F3 / Esc | New match (practice / host only) · debug overlay · session notes · show / hide the controls HUD · quit |
 
 In `--sandbox` mode the original controls apply: Z with the ball enters aim, X throws.
 

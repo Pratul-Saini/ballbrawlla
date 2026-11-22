@@ -117,3 +117,25 @@ def test_local_screen_draws_both_hints_and_the_offense_button():
     step(s, off=Intent(x_pressed=True), dfn=Intent(z_pressed=True))
     r.draw(make_view(s, 0, local=True), 60, 1 / 60)                      # execution, framed
 
+
+def test_f3_hides_the_controls_but_keeps_the_game_state():
+    s = make_session()
+    r = MatchRenderer(pygame.Surface((1280, 720)), s.level, s.field, s.t)
+    drawn = []
+    real_text = r._text
+    r._text = lambda text, *a, **k: (drawn.append(text), real_text(text, *a, **k))
+    v = make_view(s, 0, local=True)
+
+    r.draw(v, 60, 1 / 60, "hosting on x", "Z: grab   X: lock in")
+    shown_h = r.hud_h
+    assert any("Z: grab" in t for t in drawn)
+    assert "button" in r._phase_hint(v, "offense")              # instructions in the hint
+
+    drawn.clear()
+    r.show_controls = False
+    r.draw(v, 60, 1 / 60, "hosting on x", "Z: grab   X: lock in")
+    assert r.hud_h < shown_h                                    # one hint line instead of two
+    assert not any("Z: grab" in t for t in drawn)               # no key list...
+    assert any("hosting on x" in t and "F3: show controls" in t for t in drawn)   # ...status stays
+    hint = r._phase_hint(v, "offense")
+    assert hint.startswith("PLAY CALL") and "button" not in hint and "Square" not in hint

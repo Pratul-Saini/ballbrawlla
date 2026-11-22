@@ -127,6 +127,7 @@ class MatchRenderer:
         self.hud_h = HUD_H
         # Names shown in hints for the "grab" (Z) and "lock in" (X) actions.
         self.key_names = {"grab": "Z / Square", "lock": "X / Circle", "restart": "R"}
+        self.show_controls = True   # F3: key instructions in the hints and the bottom line
 
     # ------------------------------------------------------------ input helper
 
@@ -162,7 +163,9 @@ class MatchRenderer:
 
     # ------------------------------------------------------------ main
 
-    def draw(self, view: dict, fps: float, dt: float, status: str = "") -> None:
+    def draw(self, view: dict, fps: float, dt: float, status: str = "", controls: str = "") -> None:
+        """`status` (e.g. network state) is always shown; `controls` (the key list)
+        only while show_controls is on."""
         if view.get("local"):
             self.camera.frame(self._focus_points(view), self.level, dt, top_inset=self.hud_h)
         else:
@@ -177,7 +180,7 @@ class MatchRenderer:
             self._draw_play_call(view)
         if "actors" in view:
             self._draw_actors(view)
-        self._draw_hud(view, fps, status)
+        self._draw_hud(view, fps, status, controls)
 
     def _camera_target(self, view: dict) -> Vector2:
         h = self.t.player_height
@@ -351,11 +354,11 @@ class MatchRenderer:
         pygame.draw.rect(self.screen, (200, 200, 200),
                          (x0 + cam.pos.x * sx, y0 + cam.pos.y * sy, ww * sx, wh * sy), 1)
 
-    def _draw_hud(self, view: dict, fps: float, status: str) -> None:
+    def _draw_hud(self, view: dict, fps: float, status: str, controls: str = "") -> None:
         vw, vh = self.screen.get_size()
         local = bool(view.get("local"))
         me, off = Team(view["team"]), Team(view["offense"])
-        if local and view["phase"] == PLAY_CALL:
+        if local and view["phase"] == PLAY_CALL and self.show_controls:
             hints = [f"{off.display} (offense): " + self._phase_hint(view, "offense"),
                      f"{off.other.display} (defense): " + self._phase_hint(view, "defense", head=False)]
         else:
@@ -379,8 +382,10 @@ class MatchRenderer:
 
         for i, hint in enumerate(hints):
             self._text(hint, (40, top + 20 + 20 * i), DIM)
-        if status:
-            self._text(status, (40, vh - 26), DIM)
+        bottom = [status] + ([controls] if self.show_controls else ["F3: show controls"])
+        bottom = "   |   ".join(b for b in bottom if b)
+        if bottom:
+            self._text(bottom, (40, vh - 26), DIM)
 
         msg = view.get("message")
         if msg and view["phase"] in ("dead", "game_over"):
@@ -395,7 +400,7 @@ class MatchRenderer:
         if label:
             enabled = not label.startswith("Move ")
             rect = pygame.Rect(0, 0, 240, 40)
-            rect.bottomright = (vw - 24, vh - 36)        # a corner, clear of players on the floor
+            rect.topright = (vw - 24, self.hud_h + 12)   # top-right under the HUD, clear of the players
             pygame.draw.rect(self.screen, BUTTON if enabled else BUTTON_OFF, rect, border_radius=6)
             pygame.draw.rect(self.screen, BUTTON_EDGE if enabled else BUTTON_OFF_EDGE, rect, 2, border_radius=6)
             self._text(label, (rect.centerx, rect.y + 12), TEXT if enabled else DIM, center=True)
@@ -419,18 +424,19 @@ class MatchRenderer:
         return "Lock in Defender" if call.get("def_ok", True) else "Move onto a platform"
 
     def _phase_hint(self, view: dict, side: str | None = None, head: bool = True) -> str:
+        """The phase line. With show_controls off, only the game state (timers,
+        locks, who has the ball) - no key instructions."""
         phase, timer = view["phase"], view.get("timer")
         side = side or view["side"]
         grab, lock = self.key_names["grab"], self.key_names["lock"]
         if phase == "waiting":
             return "Waiting for the other player to join..."
+        if not self.show_controls:
+            return self._state_hint(view)
         if phase == PLAY_CALL:
             call = view["call"]
             mine_locked = call["off_locked"] if side == "offense" else call["def_locked"]
-            locks = (f"offense {'locked' if call['off_locked'] else '...'}, "
-                     f"defense {'locked' if call['def_locked'] else '...'}")
-            restarted = "  (play call restarted)" if call["restarts"] else ""
-            prefix = f"PLAY CALL {timer:4.1f}s   [{locks}]{restarted}   " if head else ""
+            prefix = self._state_hint(view) + "   " if head else ""
             if mine_locked:
                 return prefix + "Locked in - waiting for the other side"
             if side == "defense":
@@ -449,6 +455,23 @@ class MatchRenderer:
             if holder == "WR":
                 return f"WR has the ball: run to the end zone / DEF: {grab} to tag"
             return f"INTERCEPTION: DEF runs the other way / WR: {grab} to tag"
+        return ""
+
+    def _state_hint(self, view: dict) -> str:
+        phase, timer = view["phase"], view.get("timer")
+        if phase == PLAY_CALL:
+            call = view["call"]
+            locks = (f"offense {'locked' if call['off_locked'] else '...'}, "
+                     f"defense {'locked' if call['def_locked'] else '...'}")
+            restarted = "  (play call restarted)" if call["restarts"] else ""
+            return f"PLAY CALL {timer:4.1f}s   [{locks}]{restarted}"
+        if phase == "pre_throw":
+            return f"THROW IN {timer:4.1f}s"
+        if phase == "live":
+            holder = view["ball"]["holder"]
+            if holder is None:
+                return f"LOOSE BALL - dead in {timer:3.1f}s" if timer is not None else "Ball in the air"
+            return "WR has the ball" if holder == "WR" else "INTERCEPTION: DEF has the ball"
         return ""
 
     def _draw_debug(self, view: dict, fps: float) -> None:
