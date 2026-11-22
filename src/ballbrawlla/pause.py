@@ -18,12 +18,14 @@ COMMON = [
     "Crouch, slide: Down arrow, down on stick    Catch, tag, confirm: Z, Square",
     "Throw, lock in: X, Circle, R1               Aim: mouse, right stick",
     "R / Options: restart   F1: debug   F2: notes   F3: hide controls   Esc: this menu",
+    "M: mute or unmute the music",
 ]
 LOCAL = [
     "Blue: WASD + F (catch, tag, confirm) + G (lock in)",
     "Red: arrows + . (catch, tag, confirm) + / (lock in)",
     "Controllers: first pad is Blue, second is Red",
     "F5: new match   F1: debug   F2: notes   F3: hide controls   Esc: this menu",
+    "M: mute or unmute the music",
 ]
 
 

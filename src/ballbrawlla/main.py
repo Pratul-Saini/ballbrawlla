@@ -35,6 +35,7 @@ from ballbrawlla.net.invite import RELAY_ENV, RelayRoom, format_code, relay_addr
 from ballbrawlla.net.protocol import DEFAULT_PORT, lan_ip
 from ballbrawlla.net.view import make_view
 from ballbrawlla.notes import SessionNotes
+from ballbrawlla.music import music
 from ballbrawlla.paths import is_frozen, levels_dir, user_data_dir
 from ballbrawlla.version import __version__
 from ballbrawlla.pause import LOCAL, PauseMenu
@@ -141,6 +142,8 @@ def start(choice: Launch) -> None:
         diag.log.warning("launch refused: %s", why)
         raise LaunchError(why)
     diag.where(choice.mode)
+    music.start()
+    music.set_context("game")
     if choice.mode == "join":
         run_client(choice.address, choice.port)
         return
@@ -163,6 +166,7 @@ def run_launcher() -> None:
     pads = Gamepads()
     diag.log.info("game version %s, controller support: %s, frozen: %s, levels: %s, writable: %s",
                   __version__, pads.available, is_frozen(), LEVELS, user_data_dir())
+    music.start()
     while True:
         screen = _open_window("Gridiron Scramble", WINDOW)
         choice = run_menu(screen, state, pads.names, pads)
@@ -174,6 +178,7 @@ def run_launcher() -> None:
             diag.log.warning("launch failed, back to menu: %s", e)
             state.error = str(e)
         diag.where("menu")
+        music.set_context("menu")
         if _app_quit:
             return
         
@@ -274,6 +279,7 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT, defend
         while running:
             frame_dt = min(clock.tick(240) / 1000.0, MAX_FRAME_TIME)
             diag.beat()
+            music.update()
             accumulator += frame_dt
 
             for event in pygame.event.get():
@@ -281,6 +287,8 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT, defend
                 if notes.handle(event):
                     continue
                 if pause.handle(event, screen.get_size()):
+                    continue
+                if music.handle_event(event):
                     continue
                 if event.type == pygame.QUIT:
                     running = False
@@ -382,6 +390,7 @@ def run_couch(level: Level) -> None:
     while running:
         frame_dt = min(clock.tick(240) / 1000.0, MAX_FRAME_TIME)
         diag.beat()
+        music.update()
         accumulator += frame_dt
 
         for event in pygame.event.get():
@@ -389,6 +398,8 @@ def run_couch(level: Level) -> None:
             if notes.handle(event):
                 continue
             if pause.handle(event, screen.get_size()):
+                continue
+            if music.handle_event(event):
                 continue
             if event.type == pygame.QUIT:
                 running = False
@@ -465,6 +476,7 @@ def run_client(address: str = "", port: int = DEFAULT_PORT, code: str = "") -> N
         while running:
             frame_dt = min(clock.tick(240) / 1000.0, MAX_FRAME_TIME)
             diag.beat()
+            music.update()
             accumulator += frame_dt
 
             for event in pygame.event.get():
@@ -472,6 +484,8 @@ def run_client(address: str = "", port: int = DEFAULT_PORT, code: str = "") -> N
                 if notes.handle(event):
                     continue
                 if pause.handle(event, screen.get_size()):
+                    continue
+                if music.handle_event(event):
                     continue
                 if event.type == pygame.QUIT:
                     running = False
@@ -533,12 +547,15 @@ def run_sandbox(level: Level) -> None:
     while running:
         frame_dt = min(clock.tick(240) / 1000.0, MAX_FRAME_TIME)
         diag.beat()
+        music.update()
         accumulator += frame_dt
         for event in pygame.event.get():
             diag.event(event)
             if notes.handle(event):
                 continue
             if pause.handle(event, screen.get_size()):
+                continue
+            if music.handle_event(event):
                 continue
             if event.type == pygame.QUIT:
                 running = False
