@@ -38,6 +38,9 @@ class Tuning:
     slide_duration: float = 0.45
     slide_friction: float = 2.5       # per-second decay of slide speed
     crawl_speed: float = 110          # crouched walking speed (about 35% of run); 0 = frozen while crouched
+    # Holding the ball scales ground speed (run, slide, crawl) but not air speed or jumps:
+    # a defender out-runs the carrier on open ground, so the carrier has to use the level.
+    carry_speed_multiplier: float = 0.78
 
     # --- Wall cling ---
     wall_gravity_scale: float = 0.3   # gravity multiplier while clinging (wall friction)
