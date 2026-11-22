@@ -74,6 +74,35 @@ python -m ballbrawlla --join 192.168.x.y   # machine B
 - Use `--port N` on both sides to change the port (default 50555). R (reset) works on the host only.
 - You can test on one machine with two terminals: `--host`, then `--join 127.0.0.1`.
 
+## Online play with an invite code (different networks)
+
+The host gets a short **invite code** and the other player, on any network, types it in. Both connect
+out to a **relay server**, so there's no port forwarding or IP address to share.
+
+```sh
+python -m ballbrawlla --host --online             # prints and shows "Invite code: KQ7-M3X"
+python -m ballbrawlla --join-code KQ7-M3X         # the other player, anywhere
+```
+
+In the menu: **Play → Online → Host online game / Join with code** (Ctrl+V pastes a code). The host's
+waiting screen shows the code, and **Ctrl+C** copies it. Codes never use 0, O, 1, I or L, and dashes,
+spaces and case don't matter. A friend on the same network can still join the same game by address.
+
+**Relay server.** Someone has to run one where both players can reach it (any small VPS, open TCP 50600):
+
+```sh
+pip install -e .                     # or just copy the repo: the relay needs only Python 3.11+
+ballbrawlla-relay --port 50600       # = python -m ballbrawlla.net.relay_server
+```
+
+Players find it via `--relay HOST[:PORT]`, the `BALLBRAWLLA_RELAY` environment variable, or `DEFAULT_RELAY`
+in `src/ballbrawlla/net/invite.py` (set that once it's deployed so nobody has to configure anything).
+To try it on one machine, run the relay, then `--host --online --relay 127.0.0.1` and
+`--join-code CODE --relay 127.0.0.1` in two more terminals.
+
+The relay only passes bytes along and can't read the game's rules, but traffic is **not encrypted**. The
+joiner plays one internet round trip behind the host (there's no client-side prediction yet).
+
 ## Controls
 
 **Play call** (15s; see [gameplay-rules.md](gameplay-rules.md)):

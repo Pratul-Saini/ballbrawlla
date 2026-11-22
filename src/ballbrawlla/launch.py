@@ -3,7 +3,8 @@
 Every check returns a plain-language reason when it fails, or None when the launch is fine, so the caller
 decides how to show it: the menu greys the option out, the command line prints one line and exits.
 
-Modes: "practice", "catch", "local", "host", "join", "sandbox".
+Modes: "practice", "catch", "local", "host", "join", "host_online", "join_code", "sandbox".
+"host_online" / "join_code" are internet play through the relay server with an invite code (net/invite.py).
 """
 
 from __future__ import annotations
@@ -14,16 +15,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ballbrawlla.config import TUNING
+from ballbrawlla.net.invite import check_code, check_relay
 from ballbrawlla.net.protocol import DEFAULT_PORT
 from ballbrawlla.rules.field import Field
 from ballbrawlla.world.level import Level, level_from_dict, load_level
 
 LEVELS = Path(__file__).resolve().parents[2] / "levels"
-MATCH_MODES = ("practice", "catch", "local", "host")  # football rules: need a football field
-ALL_MODES = ("practice", "catch", "local", "host", "join", "sandbox")
+MATCH_MODES = ("practice", "catch", "local", "host", "host_online")  # football rules: need a football field
+ALL_MODES = ("practice", "catch", "local", "host", "join", "host_online", "join_code", "sandbox")
 MODE_LABELS = {
     "practice": "Practice", "catch": "Catch practice", "local": "Two players", "host": "Host a game",
-    "join": "Join a game", "sandbox": "Explore",
+    "join": "Join a game", "host_online": "Host online", "join_code": "Join with code", "sandbox": "Explore",
 }
 
 
@@ -147,12 +149,15 @@ def check_address(address: str) -> str | None:
     return None
 
 
-def check_launch(mode: str, level: Path | None = None, port: int = DEFAULT_PORT, address: str = "") -> str | None:
+def check_launch(mode: str, level: Path | None = None, port: int = DEFAULT_PORT, address: str = "",
+                 code: str = "") -> str | None:
     """Everything that must be true before `mode` can start, checked against the real files and the real port."""
     if mode not in ALL_MODES:
         return f"Unknown mode {mode!r}."
     if mode == "join":
         return check_address(address) or check_port_number(port)
+    if mode == "join_code":
+        return check_code(code) or check_relay()
     try:
         lv = read_level(level)
     except LaunchError as e:
@@ -164,6 +169,8 @@ def check_launch(mode: str, level: Path | None = None, port: int = DEFAULT_PORT,
             return check_level(mode, inspect_level(level))
     if mode == "host":
         return check_port(port)
+    if mode == "host_online":
+        return check_relay() or check_port(port)
     return None
 
 

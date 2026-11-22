@@ -120,6 +120,7 @@ class MatchRenderer:
         self.font = pygame.font.Font(None, 22)
         self.small = pygame.font.Font(None, 18)
         self.big = pygame.font.Font(None, 44)
+        self._invite_font: pygame.font.Font | None = None
         self.debug = False
         self.button_rect: pygame.Rect | None = None
         self.markers = FieldMarkers(field)
@@ -163,9 +164,10 @@ class MatchRenderer:
 
     # ------------------------------------------------------------ main
 
-    def draw(self, view: dict, fps: float, dt: float, status: str = "", controls: str = "") -> None:
+    def draw(self, view: dict, fps: float, dt: float, status: str = "", controls: str = "",
+             invite: str | None = None) -> None:
         """`status` (e.g. network state) is always shown; `controls` (the key list)
-        only while show_controls is on."""
+        only while show_controls is on. `invite`: the online host's invite code, shown big while waiting."""
         if view.get("local"):
             self.camera.frame(self._focus_points(view), self.level, dt, top_inset=self.hud_h)
         else:
@@ -181,6 +183,21 @@ class MatchRenderer:
         if "actors" in view:
             self._draw_actors(view)
         self._draw_hud(view, fps, status, controls)
+        if invite and phase == "waiting":
+            self._draw_invite(invite)
+
+    def _draw_invite(self, code: str) -> None:
+        vw, vh = self.screen.get_size()
+        box = pygame.Rect(0, 0, 560, 150)
+        box.center = (vw // 2, vh // 2)
+        pygame.draw.rect(self.screen, (16, 17, 22), box, border_radius=10)
+        pygame.draw.rect(self.screen, BANNER, box, 2, border_radius=10)
+        self._text("Invite code", (box.centerx, box.y + 16), DIM, center=True)
+        if self._invite_font is None:
+            self._invite_font = pygame.font.Font(None, 84)
+        self._text(code, (box.centerx, box.y + 44), BANNER, self._invite_font, center=True)
+        self._text("Share it with the other player. Ctrl+C copies it.", (box.centerx, box.bottom - 30), DIM,
+                   center=True)
 
     def _camera_target(self, view: dict) -> Vector2:
         h = self.t.player_height

@@ -4,6 +4,7 @@ TCP keeps key-press edges (Z, X, jump) reliable without a resend layer, and on
 a LAN its latency is a few ms. JSON keeps messages easy to inspect.
 
 Messages
+  (Over the internet the same messages pass through the relay server; see net/invite.py.)
   client -> host  {"t": "hello", "v": PROTOCOL_VERSION}
                   {"t": "in", "mx": -1|0|1, "v": -1|0|1, "j": 0|1, "z": 0|1, "x": 0|1,
                    "m": [x, y] | null (world coords), "mh": 0|1, "mp": 0|1, "b": 0|1,
@@ -18,7 +19,7 @@ import socket
 
 from ballbrawlla.input import Intent
 
-PROTOCOL_VERSION = 3
+PROTOCOL_VERSION = 4
 DEFAULT_PORT = 50555
 MAX_OUTBOX = 1 << 20  # drop a peer that stops reading rather than buffer forever
 

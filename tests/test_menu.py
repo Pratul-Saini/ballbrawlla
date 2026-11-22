@@ -68,18 +68,59 @@ def test_two_players_only_lists_football_fields():
     assert s.result.mode == "local" and s.result.level.stem == "field_09"
 
 
-def test_online_match_is_coming_soon_and_launches_nothing():
+@pytest.fixture
+def relay_env(monkeypatch):
+    from ballbrawlla.net import invite
+    monkeypatch.setattr(invite, "DEFAULT_RELAY", "")
+    monkeypatch.setenv(invite.RELAY_ENV, "relay.example.com")
+    return monkeypatch
+
+
+def test_online_screen_lists_invite_and_lan_options(relay_env):
     s = MenuState()
     goto(s, "PLAY")
     goto(s, "ONLINE")
-    assert labels(s) == ["HOST A GAME", "JOIN A GAME", "ONLINE MATCH"]
-    item = s.items()[2]
-    assert item.soon and not item.enabled and item.hint == "coming soon"
-    assert "neither of you hosts" in item.reason and "isn't built yet" in item.reason
-    s.cursor = 2
+    assert labels(s) == ["HOST ONLINE GAME", "JOIN WITH CODE", "HOST ON THIS NETWORK", "JOIN ON THIS NETWORK"]
+    goto(s, "HOST ONLINE GAME")
+    assert s.screen == "level" and s.mode == "host_online"
+    assert "football" not in " ".join(i.reason or "" for i in s.items())    # the picker only shows fields
     s.select()
-    assert s.result is None and s.screen == "online"
-    assert s.error == item.reason                       # the description is shown, not an error about the code
+    assert s.result.mode == "host_online"
+
+
+def test_online_options_are_greyed_without_a_relay(monkeypatch):
+    from ballbrawlla.net import invite
+    monkeypatch.setattr(invite, "DEFAULT_RELAY", "")
+    monkeypatch.delenv(invite.RELAY_ENV, raising=False)
+    s = MenuState()
+    goto(s, "PLAY")
+    goto(s, "ONLINE")
+    host, join = s.items()[:2]
+    assert not host.enabled and not join.enabled and "No relay server" in join.reason
+    s.cursor = 1
+    s.select()
+    assert s.screen == "online" and "No relay server" in s.error
+
+
+def test_join_with_code_types_pastes_and_connects(relay_env):
+    s = MenuState()
+    goto(s, "PLAY")
+    goto(s, "ONLINE")
+    goto(s, "JOIN WITH CODE")
+    assert s.screen == "code" and s.editing and not s.items()[1].enabled
+    for ch in "kq7-m3":
+        press(s, ord(ch), ch)
+    assert s.code == "KQ7M3" and labels(s)[0] == "CODE" and not s.items()[1].enabled
+    press(s, ord("x"), "x")
+    assert "KQ7-M3X" in s.items()[0].label and s.items()[1].enabled
+    s.paste("Join my game! Code: ab2-cd3")                 # a whole pasted message still finds the code
+    assert s.code == "AB2CD3"
+    press(s, pygame.K_BACKSPACE)
+    assert s.code == "AB2CD"
+    s.paste("ab2cd4")
+    press(s, pygame.K_RETURN)                               # Enter on the code row moves to CONNECT
+    s.select()
+    assert s.result.mode == "join_code" and s.result.code == "AB2CD4"
 
 
 def test_broken_level_is_greyed_in_the_picker(tmp_path):
@@ -108,7 +149,7 @@ def test_join_needs_an_address():
     s = MenuState()
     goto(s, "PLAY")
     goto(s, "ONLINE")
-    goto(s, "JOIN A GAME")
+    goto(s, "JOIN ON THIS NETWORK")
     s.close()                       # no network listener needed for this test
     assert s.items()[0].action == "none" and s.editing                     # starts on the address row
     assert not s.items()[2].enabled                                         # CONNECT needs an address
@@ -131,12 +172,13 @@ def test_escape_goes_back_then_quits():
     assert s.quit
 
 
-def test_every_screen_draws():
+def test_every_screen_draws(relay_env):
     pygame.font.init()
     fonts = {k: pygame.font.Font(None, n) for k, n in (("big", 64), ("mid", 36), ("small", 24))}
     surface = pygame.Surface((1280, 720))
     s = MenuState()
-    for path in (["PLAY"], ["PLAY", "ONLINE"], ["PLAY", "ONLINE", "JOIN A GAME"]):
+    for path in (["PLAY"], ["PLAY", "ONLINE"], ["PLAY", "ONLINE", "JOIN ON THIS NETWORK"],
+                 ["PLAY", "ONLINE", "JOIN WITH CODE"]):
         s = MenuState()
         for label in path:
             goto(s, label)
@@ -215,7 +257,7 @@ def _join_screen(monkeypatch):
     s = MenuState()
     goto(s, "PLAY")
     goto(s, "ONLINE")
-    goto(s, "JOIN A GAME")
+    goto(s, "JOIN ON THIS NETWORK")
     return s, lambda name, level, tcp: Beacon(name, level, tcp, discovery_port=port)
 
 
@@ -261,7 +303,7 @@ def test_join_without_discovery_says_so(monkeypatch):
     s = MenuState()
     goto(s, "PLAY")
     goto(s, "ONLINE")
-    goto(s, "JOIN A GAME")
+    goto(s, "JOIN ON THIS NETWORK")
     assert "automatically" in s.items()[0].label
 
 
