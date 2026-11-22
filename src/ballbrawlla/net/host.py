@@ -20,6 +20,8 @@ class RemoteInput:
         self.mouse: tuple[float, float] | None = None
         self.mouse_held = False
         self.mouse_pressed = self.button = False
+        self.jump_held = False
+        self.aim_stick: tuple[float, float] | None = None
 
     def feed(self, msg: dict) -> None:
         self.move_x = max(-1, min(1, int(msg.get("mx", 0))))
@@ -32,6 +34,9 @@ class RemoteInput:
         self.mouse_held = bool(msg.get("mh"))
         self.mouse_pressed |= bool(msg.get("mp"))
         self.button |= bool(msg.get("b"))
+        self.jump_held = bool(msg.get("jh"))
+        a = msg.get("as")
+        self.aim_stick = (float(a[0]), float(a[1])) if isinstance(a, list) and len(a) == 2 else None
 
     def consume(self) -> Intent:
         intent = Intent(
@@ -40,6 +45,8 @@ class RemoteInput:
             mouse_held=self.mouse_held,
             mouse_pressed=self.mouse_pressed,
             button_pressed=self.button,
+            jump_held=self.jump_held,
+            aim_stick=self.aim_stick,
         )
         self.jump = self.z = self.x = False
         self.mouse_pressed = self.button = False

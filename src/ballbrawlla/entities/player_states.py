@@ -14,6 +14,7 @@ returns a new State to transition to, or None to stay.
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 from ballbrawlla.input import Intent
@@ -164,7 +165,8 @@ class Crouch(State):
     def update(self, p: Player, intent: Intent, dt: float) -> State | None:
         if not p.contacts.on_ground:
             return Airborne()
-        p.vel.x = 0
+        # Crawl: a slide that ends under a low gap must not trap the player there.
+        p.vel.x = intent.move_x * p.t.crawl_speed
         _face(p, intent.move_x)
         if (nxt := _grab_or_aim(p, intent)) is not None:
             return nxt
@@ -217,6 +219,8 @@ class Aiming(State):
         if not p.contacts.on_ground:
             return Airborne()
         # Right = clockwise, left = counter-clockwise.
+        if intent.aim_stick is not None:  # controller: right stick points the throw
+            p.aim_angle = math.degrees(math.atan2(intent.aim_stick[1], intent.aim_stick[0])) % 360
         p.aim_angle = (p.aim_angle - intent.move_x * p.t.aim_rate * dt) % 360
         p.aim_power = min(
             p.t.power_max,

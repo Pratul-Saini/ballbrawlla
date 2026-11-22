@@ -5,6 +5,7 @@ regardless of frame rate.
     ballbrawlla --host              host a 2-player LAN match (you are Blue)
     ballbrawlla --join 192.168.x.y  join a LAN match (you are Red)
     ballbrawlla --sandbox           free play in the small arena (physics tuning, no rules)
+    ballbrawlla --sandbox --level field_01   free play on the big match field
 """
 
 import argparse
@@ -21,7 +22,7 @@ from ballbrawlla.net.client import Client
 from ballbrawlla.net.host import Host
 from ballbrawlla.net.protocol import DEFAULT_PORT, lan_ip
 from ballbrawlla.net.view import make_view
-from ballbrawlla.render.match_renderer import MatchRenderer
+from ballbrawlla.render.match_renderer import Camera, MatchRenderer
 from ballbrawlla.render.renderer import Renderer
 from ballbrawlla.rules.field import Field
 from ballbrawlla.session import Session
@@ -43,6 +44,10 @@ def run(argv: list[str] | None = None) -> None:
     mode.add_argument("--sandbox", action="store_true", help="free play, no rules")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     args = parser.parse_args(argv)
+    if args.level is not None and not args.level.exists():
+        named = LEVELS / f"{args.level.stem}.json"  # allow --level field_01
+        if named.exists():
+            args.level = named
 
     pygame.init()
     try:
@@ -54,6 +59,11 @@ def run(argv: list[str] | None = None) -> None:
             run_match(load_level(args.level or DEFAULT_LEVEL), host=args.host, port=args.port)
     finally:
         pygame.quit()
+
+
+def _pad_status(inputs: KeyboardInput) -> str:
+    pads = inputs.gamepads.names if inputs.gamepads is not None else []
+    return f"   |   controller: {', '.join(pads)}" if pads else ""
 
 
 def _open_window(title: str, size: tuple[int, int] = WINDOW) -> pygame.Surface:
@@ -100,7 +110,11 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT) -> Non
                         session.new_match()
                     elif event.key == pygame.K_F1:
                         renderer.debug = not renderer.debug
-                inputs.handle_event(event, renderer.button_hit)
+                action = inputs.handle_event(event, renderer.button_hit)
+                if action == "restart":
+                    session.new_match()
+                elif action == "debug":
+                    renderer.debug = not renderer.debug
 
             if server:
                 joined, left = server.poll()
@@ -122,7 +136,8 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT) -> Non
                 for pid in server.clients:
                     server.send_to(pid, make_view(session, pid))
 
-            status = f"hosting on {address}" if server else "R: restart   F1: debug   Esc: quit"
+            status = f"hosting on {address}" if server else "R / Options: restart   F1: debug   Esc: quit"
+            status += _pad_status(inputs)
             renderer.draw(make_view(session, 0), clock.get_fps(), frame_dt, status)
             pygame.display.flip()
     finally:
@@ -163,7 +178,8 @@ def run_client(address: str, port: int = DEFAULT_PORT) -> None:
                         running = False
                     elif event.key == pygame.K_F1:
                         renderer.debug = not renderer.debug
-                inputs.handle_event(event, renderer.button_hit)
+                if inputs.handle_event(event, renderer.button_hit) == "debug":
+                    renderer.debug = not renderer.debug
 
             # Send input at the simulation rate so press edges line up with host ticks.
             while accumulator >= dt:
@@ -177,6 +193,7 @@ def run_client(address: str, port: int = DEFAULT_PORT) -> None:
             status = f"connected to {address}:{port}"
             if client.closed:
                 status = "disconnected from host - press Esc to quit"
+            status += _pad_status(inputs)
             if view is not None:
                 renderer.draw(view, clock.get_fps(), frame_dt, status)
             pygame.display.flip()
@@ -185,17 +202,25 @@ def run_client(address: str, port: int = DEFAULT_PORT) -> None:
 
 
 def run_sandbox(level: Level) -> None:
-    """The original free-play arena: one player, a ball, no rules."""
+    """Free play: one player, a ball, no rules. Levels bigger than the window
+    get a camera that follows the player."""
     game = Game(level, TUNING, 1)
-    screen = _open_window("ballbrawlla (sandbox)", (int(level.width), int(level.height)))
-    renderer = Renderer(screen)
+    size = (min(int(level.width), WINDOW[0]), min(int(level.height), WINDOW[1]))
+    screen = _open_window(f"ballbrawlla (sandbox: {level.name})", size)
+    try:
+        field = Field(level, TUNING)  # field levels get yard lines and end zones
+    except ValueError:
+        field = None                  # e.g. the small arena: not a football field
+    renderer = Renderer(screen, field)
+    camera = Camera(size)
     inputs = KeyboardInput()
     clock = pygame.time.Clock()
     dt = TUNING.dt
     accumulator = 0.0
     running = True
     while running:
-        accumulator += min(clock.tick(240) / 1000.0, MAX_FRAME_TIME)
+        frame_dt = min(clock.tick(240) / 1000.0, MAX_FRAME_TIME)
+        accumulator += frame_dt
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -206,11 +231,16 @@ def run_sandbox(level: Level) -> None:
                     game.reset()
                 elif event.key == pygame.K_F1:
                     renderer.debug = not renderer.debug
-            inputs.handle_event(event)
+            action = inputs.handle_event(event)
+            if action == "restart":
+                game.reset()
+            elif action == "debug":
+                renderer.debug = not renderer.debug
         while accumulator >= dt:
             game.step([inputs.consume()], dt)
             accumulator -= dt
-        renderer.draw(game, clock.get_fps())
+        camera.follow(game.player.center, level, frame_dt)
+        renderer.draw(game, clock.get_fps(), camera=camera.pos)
         pygame.display.flip()
 
 

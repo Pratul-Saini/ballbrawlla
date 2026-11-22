@@ -1,0 +1,88 @@
+"""Football field markings, drawn behind everything else. Shared by the match
+renderer and the sandbox renderer so every field level looks the same.
+
+- End zones tinted in the defending team's color, with the team name painted on the floor
+- Goal lines (bright), the 50 (medium), every 10 yards (faint), every 5 yards (short ticks)
+- Yard numbers painted just above the floor, and optionally pinned to a fixed
+  screen height so they're readable when the floor is off screen
+"""
+
+from __future__ import annotations
+
+import pygame
+
+from ballbrawlla.physics.vec import Vector2
+from ballbrawlla.rules.field import Field
+from ballbrawlla.rules.teams import Team
+
+TEAM_COLORS = {Team.LEFT: (80, 170, 255), Team.RIGHT: (255, 110, 110)}
+YARD_LINE = (44, 48, 58)
+MIDFIELD_LINE = (70, 76, 92)
+GOAL_LINE = (200, 200, 210)
+YARD_TICK = (56, 60, 72)
+LABEL = (150, 155, 170)
+FLOOR_PAINT = (52, 56, 68)
+END_ZONE_ALPHA = 28
+
+
+class FieldMarkers:
+    def __init__(self, field: Field) -> None:
+        self.field = field
+        self.small = pygame.font.Font(None, 18)
+        self.paint = pygame.font.Font(None, 40)
+        self._tint_cache: dict[tuple[Team, int], pygame.Surface] = {}
+        self._label_cache: dict[tuple[str, bool], pygame.Surface] = {}
+
+    def _tint(self, team: Team, height: int) -> pygame.Surface:
+        key = (team, height)
+        if key not in self._tint_cache:
+            surf = pygame.Surface((round(self.field.end_zone_px), height), pygame.SRCALPHA)
+            surf.fill((*TEAM_COLORS[team], END_ZONE_ALPHA))
+            self._tint_cache[key] = surf
+        return self._tint_cache[key]
+
+    def _label(self, text: str, painted: bool) -> pygame.Surface:
+        key = (text, painted)
+        if key not in self._label_cache:
+            font, color = (self.paint, FLOOR_PAINT) if painted else (self.small, LABEL)
+            self._label_cache[key] = font.render(text, True, color)
+        return self._label_cache[key]
+
+    def draw(self, screen: pygame.Surface, camera: Vector2, pinned_label_y: float | None = None) -> None:
+        f = self.field
+        t = f.t
+        sw, sh = screen.get_size()
+        cx, cy = camera.x, camera.y
+        floor_sy = f.floor_y - cy
+
+        # End zones
+        for team in Team:
+            x0 = f.goal_line_x(team) - (f.end_zone_px if team is Team.LEFT else 0)
+            sx = x0 - cx
+            if sx + f.end_zone_px < 0 or sx > sw:
+                continue
+            screen.blit(self._tint(team, sh), (sx, 0))
+            name = self._label(team.display.upper(), painted=True)
+            screen.blit(name, (sx + (f.end_zone_px - name.get_width()) / 2, floor_sy - 70))
+
+        # Lines every 5 yards
+        for yards in range(0, int(t.field_yards) + 1, 5):
+            sx = f.x_at(Team.LEFT, yards) - cx
+            if sx < -60 or sx > sw + 60:
+                continue
+            if yards in (0, t.field_yards):
+                pygame.draw.line(screen, GOAL_LINE, (sx, 0), (sx, sh), 2)
+            elif yards * 2 == t.field_yards:
+                pygame.draw.line(screen, MIDFIELD_LINE, (sx, 0), (sx, sh), 2)
+            elif yards % 10 == 0:
+                pygame.draw.line(screen, YARD_LINE, (sx, 0), (sx, sh), 1)
+            else:  # 5-yard tick at the floor
+                pygame.draw.line(screen, YARD_TICK, (sx, floor_sy - 14), (sx, floor_sy), 1)
+
+            if yards % 10 == 0 and 0 < yards < t.field_yards:
+                text = str(int(min(yards, t.field_yards - yards)))
+                img = self._label(text, painted=True)
+                screen.blit(img, (sx - img.get_width() / 2, floor_sy - 34))
+                if pinned_label_y is not None:
+                    img = self._label(text, painted=False)
+                    screen.blit(img, (sx - img.get_width() / 2, pinned_label_y))

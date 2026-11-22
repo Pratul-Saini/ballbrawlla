@@ -1,11 +1,11 @@
 """The play call phase of a down.
 
-Offense (keyboard or mouse):
+Offense (keyboard, mouse or controller - see gamepad.py for the buttons):
   1. Place the QB (only when the down lets the offense pick the spawn):
      drag the QB with the mouse, or move it with the arrows. It snaps to the
      nearest platform top inside the allowed region. Z / the button confirms.
   2. Aim: hold the mouse button and point (direction = angle, distance = power),
-     or use left/right (angle) and up/down (power). X / the button locks in.
+     or point the right stick (angle), or use left/right (angle) and up/down (power). X / the button locks in.
      Clicking the QB again (or Z) goes back to placing.
 Defense: drag the Defender with the mouse, or move it with the arrows, inside
   its allowed region. Z / X / the button locks in.
@@ -147,6 +147,8 @@ class PlayCall:
                 self.placing = False
                 self._dragging_qb = False
         else:
+            if i.aim_stick is not None:  # controller: right stick points the throw
+                self.aim_angle = math.degrees(math.atan2(i.aim_stick[1], i.aim_stick[0])) % 360
             self.aim_angle = (self.aim_angle - i.move_x * self.t.aim_rate * dt) % 360
             self.aim_power = self._clamp_power(self.aim_power + i.vertical * self.t.power_rate * dt)
             if i.z_pressed and can_place:
