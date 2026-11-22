@@ -9,3 +9,5 @@ dist/
 assets/music/*.mp3
 assets/music/*.ogg
 assets/music/*.wav
+# Godot editor cache (generated)
+godot/.godot/
