@@ -5,6 +5,7 @@ import time
 
 from ballbrawlla.input import Intent
 from ballbrawlla.net.protocol import DEFAULT_PORT, PROTOCOL_VERSION, Connection, intent_to_msg
+from ballbrawlla.version import __version__
 
 
 class Client:
@@ -18,7 +19,7 @@ class Client:
             except OSError as e:
                 raise ConnectionError(f"could not reach {address}:{port} ({e})") from e
         self.conn = Connection(sock)
-        self.conn.send({"t": "hello", "v": PROTOCOL_VERSION})
+        self.conn.send({"t": "hello", "v": PROTOCOL_VERSION, "game": __version__})
         self._latest: dict | None = None
 
         deadline = time.monotonic() + timeout

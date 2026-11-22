@@ -19,10 +19,12 @@ import platform
 import sys
 import threading
 import time
-from pathlib import Path
 import traceback
+from pathlib import Path
 
-LOG_DIR = Path(__file__).resolve().parents[2] / "logs"
+from ballbrawlla.paths import logs_dir
+
+LOG_DIR = logs_dir()
 KEEP = 5
 STALL_SECONDS = 3.0
 HEARTBEAT_SECONDS = 2.0
@@ -40,7 +42,7 @@ def setup() -> Path | None:
     if _state["path"] is not None:
         return _state["path"]
     try:
-        LOG_DIR.mkdir(exist_ok=True)
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
         old = sorted(LOG_DIR.glob("run-*.log"), key=lambda p: p.stat().st_mtime)
         for p in old[:-(KEEP - 1)] if len(old) >= KEEP else []:
             p.unlink(missing_ok=True)

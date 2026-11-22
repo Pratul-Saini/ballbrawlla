@@ -400,3 +400,41 @@ def test_escape_from_free_play_screen_goes_back_to_play():
     goto(s, "FREE PLAY")
     press(s, pygame.K_ESCAPE)
     assert s.screen == "play"
+
+
+def test_animation_is_a_pure_function_of_time_and_loops():
+    from ballbrawlla.menu_anim import PERIOD, pose
+    a, b = pose(1.1, 1280), pose(1.1, 1280)
+    assert a == b
+    assert pose(0.1, 1280).phase == "windup" and pose(1.0, 1280).phase == "flight"
+    assert pose(PERIOD - 0.1, 1280).phase == "hold"
+    assert pose(0.5, 1280).direction == 1 and pose(PERIOD + 0.5, 1280).direction == -1     # players swap
+
+
+def test_ball_flies_from_one_player_to_the_other_along_an_arc():
+    from ballbrawlla.menu_anim import FLIGHT, WINDUP, layout, pose
+    left, right, _ = layout(1280, 300)
+    start, mid, end = (pose(WINDUP + FLIGHT * u, 1280) for u in (0.01, 0.5, 0.99))
+    assert start.x == pytest.approx(left, abs=20) and end.x == pytest.approx(right, abs=20)
+    assert mid.y < start.y and mid.y < end.y                       # the middle of the flight is the highest point
+    back = pose(3.6 + WINDUP + FLIGHT * 0.99, 1280)
+    assert back.x == pytest.approx(left, abs=20)                  # and the next throw goes the other way
+
+
+def test_bad_sprite_files_do_not_break_the_menu(tmp_path):
+    from ballbrawlla.menu_anim import load_ball_frames
+    pygame.display.set_mode((10, 10))
+    (tmp_path / "football_1.png").write_bytes(b"not an image")
+    assert load_ball_frames(tmp_path) == []                       # falls back to the drawn ball
+    img = pygame.Surface((8, 8), pygame.SRCALPHA)
+    pygame.image.save(img, str(tmp_path / "football_2.png"))
+    assert len(load_ball_frames(tmp_path)) == 1
+
+
+def test_menu_draws_with_animation_at_several_times():
+    pygame.font.init()
+    fonts = {k: pygame.font.Font(None, n) for k, n in (("big", 64), ("mid", 36), ("small", 24))}
+    surface = pygame.Surface((1280, 720))
+    s = MenuState()
+    for t in (0.0, 0.7, 1.5, 2.6, 3.4, 5.9):
+        draw(surface, s, fonts, t=t)

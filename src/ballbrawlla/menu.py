@@ -15,13 +15,14 @@ import time
 import pygame
 
 from ballbrawlla import diag
+from ballbrawlla.menu_anim import Backdrop
 from ballbrawlla.launch import (
     MODE_LABELS, LevelInfo, check_launch, check_level, check_port, list_levels,
 )
 from ballbrawlla.net.discovery import Finder, FoundGame
 from ballbrawlla.net.invite import ALPHABET, CODE_LEN, check_relay, format_code, normalize_code
 from ballbrawlla.net.protocol import DEFAULT_PORT, lan_ip
-from ballbrawlla.world.level import load_level
+from ballbrawlla.version import __version__
 
 TITLE = "GRIDIRON SCRAMBLE"
 TAGLINE = "Catch it. Run it. Don't get tagged."
@@ -113,7 +114,7 @@ class MenuState:
             ]
         if self.screen == "join":
             if self.games:
-                found = [Item(g.name, f"found:{n}", hint=g.level or g.address) for n, g in enumerate(self.games)]
+                found = [Item(g.name, f"found:{n}", hint=" - ".join(x for x in (g.level, g.address) if x)) for n, g in enumerate(self.games)]
             elif self.finder is not None and self.finder.available:
                 found = [Item("Looking for games on your network...", "none", hint="or type an address below")]
             else:
@@ -266,31 +267,6 @@ class MenuState:
 
 # ---------------------------------------------------------------- drawing
 
-_minimaps: dict[tuple, pygame.Surface] = {}
-
-
-def _minimap(surface: pygame.Surface, info: LevelInfo, box: pygame.Rect) -> None:
-    """Drawn once per level and size, then reused: loading a level every frame made the picker crawl."""
-    key = (info.key, box.size)
-    if key not in _minimaps:
-        img = pygame.Surface(box.size)
-        img.fill(PANEL)
-        try:
-            level = load_level(info.path)
-        except Exception:
-            level = None
-        if level is not None:
-            s = min(box.w / level.width, box.h / level.height)
-            ox = (box.w - level.width * s) / 2
-            oy = (box.h - level.height * s) / 2
-            for p in level.platforms:
-                r = p.rect
-                rect = pygame.Rect(ox + r.x * s, oy + r.y * s, max(1, r.w * s), max(1, r.h * s))
-                pygame.draw.rect(img, DIM if p.kind == "bound" else ((210, 160, 100) if p.is_thin else FG), rect)
-        _minimaps[key] = img
-    surface.blit(_minimaps[key], box.topleft)
-
-
 SELECT_BUTTONS = (pygame.CONTROLLER_BUTTON_A, pygame.CONTROLLER_BUTTON_X)   # Cross or Square
 ROW_H = 44
 
@@ -300,7 +276,7 @@ def _rows(state: MenuState, size: tuple[int, int]) -> list[pygame.Rect]:
     n = len(state.items())
     top = max(150, h // 2 - (min(n, 12) * ROW_H) // 2 + 30)
     first = max(0, state.cursor - 11) if n > 12 else 0
-    return [pygame.Rect(w // 2 - 330, top + (k - first) * ROW_H, 660 if state.screen != "level" else 420, ROW_H - 6)
+    return [pygame.Rect(w // 2 - 330, top + (k - first) * ROW_H, 660, ROW_H - 6)
             for k in range(n)]
 
 
@@ -317,10 +293,19 @@ def _wrap(surface: pygame.Surface, font: pygame.font.Font, message: str, color, 
     surface.blit(font.render(line, True, color), font.render(line, True, color).get_rect(midtop=(box.centerx, y)))
 
 
-def draw(surface: pygame.Surface, state: MenuState, fonts: dict[str, pygame.font.Font]) -> list[pygame.Rect]:
-    """Draw the current screen. Returns each item's rect (for mouse hit-testing)."""
-    surface.fill(BG)
+_backdrop: Backdrop | None = None
+
+
+def draw(surface: pygame.Surface, state: MenuState, fonts: dict[str, pygame.font.Font],
+         t: float | None = None) -> list[pygame.Rect]:
+    """Draw the current screen. Returns each item's rect (for mouse hit-testing). `t` is the animation clock."""
     w, h = surface.get_size()
+    global _backdrop
+    if _backdrop is None or _backdrop.size != (w, h):
+        _backdrop = Backdrop((w, h))
+    # The players only appear on short screens; the level and join lists need the room.
+    _backdrop.draw(surface, pygame.time.get_ticks() / 1000.0 if t is None else t,
+                   with_players=state.screen in ("main", "play", "freeplay", "online"))
     big, mid, small = fonts["big"], fonts["mid"], fonts["small"]
 
     def text(font, s, color, **pos):
@@ -351,21 +336,21 @@ def draw(surface: pygame.Surface, state: MenuState, fonts: dict[str, pygame.font
         if not item.enabled and sel and not item.soon:
             text(small, item.reason, BAD, midtop=(w // 2, h - 110))
 
-    shown = state.shown_levels() if state.screen == "level" else []
-    if shown:
-        info = shown[state.cursor]
-        box = pygame.Rect(w // 2 + 110, 170, 260, 150)
-        _minimap(surface, info, box)
-        text(small, info.summary() if info.usable else info.error, FG, topleft=(box.x, box.bottom + 10))
     if state.screen == "main":
         pads = ", ".join(state.pad_names)
         text(small, f"controller: {pads}" if pads else "no controller found (keyboard and mouse work)", DIM,
              midbottom=(w // 2, h - 50))
     if state.screen == "online":
-        text(small, f"your address: {lan_ip()}", DIM, midbottom=(w // 2, h - 50))
+        text(small, f"your address: {lan_ip()}", DIM, midbottom=(w // 2, h - 74))
+        text(small, "First time hosting? If your computer asks, allow incoming connections.", DIM,
+             midbottom=(w // 2, h - 50))
     if state.screen == "code":
         text(small, "The host sees the code on their waiting screen (Ctrl+C there copies it).", DIM,
              midbottom=(w // 2, h - 50))
+    if state.screen == "join":
+        text(small, "Nothing showing up? You and the host must be on the same Wi-Fi, "
+                    "and your firewall must allow this game.", DIM, midbottom=(w // 2, h - 50))
+    text(small, f"v{__version__}", DIM, bottomright=(w - 14, h - 10))
     text(small, "Up/Down: move   Enter / click / Cross: select   Esc / Circle: back", DIM, midbottom=(w // 2, h - 20))
 
     if state.error:

@@ -35,6 +35,8 @@ from ballbrawlla.net.invite import RELAY_ENV, RelayRoom, format_code, relay_addr
 from ballbrawlla.net.protocol import DEFAULT_PORT, lan_ip
 from ballbrawlla.net.view import make_view
 from ballbrawlla.notes import SessionNotes
+from ballbrawlla.paths import is_frozen, levels_dir, user_data_dir
+from ballbrawlla.version import __version__
 from ballbrawlla.pause import LOCAL, PauseMenu
 from ballbrawlla.render.match_renderer import Camera, MatchRenderer
 from ballbrawlla.render.renderer import Renderer
@@ -42,7 +44,7 @@ from ballbrawlla.rules.field import Field
 from ballbrawlla.session import Session
 from ballbrawlla.world.level import Level, level_from_dict, level_to_dict
 
-LEVELS = Path(__file__).resolve().parents[2] / "levels"
+LEVELS = levels_dir()
 DEFAULT_LEVEL = LEVELS / "field_01.json"
 SANDBOX_LEVEL = LEVELS / "arena_01.json"
 WINDOW = (1280, 720)
@@ -159,6 +161,8 @@ def run_launcher() -> None:
     """Menu -> game -> menu, until the player quits from the menu."""
     state = MenuState()
     pads = Gamepads()
+    diag.log.info("game version %s, controller support: %s, frozen: %s, levels: %s, writable: %s",
+                  __version__, pads.available, is_frozen(), LEVELS, user_data_dir())
     while True:
         screen = _open_window("Gridiron Scramble", WINDOW)
         choice = run_menu(screen, state, pads.names, pads)

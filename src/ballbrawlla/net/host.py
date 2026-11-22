@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from ballbrawlla.input import Intent
 from ballbrawlla.net.protocol import DEFAULT_PORT, PROTOCOL_VERSION, Connection
+from ballbrawlla.version import __version__
 
 if TYPE_CHECKING:
     from ballbrawlla.net.invite import RelayRoom
@@ -104,7 +105,10 @@ class Host:
                 self._pending.remove(conn)
                 pid = self._free_slot()
                 if msg.get("v") != PROTOCOL_VERSION:
-                    conn.send({"t": "reject", "reason": "version mismatch"})
+                    theirs = str(msg.get("game") or "an older version")[:20]
+                    conn.send({"t": "reject", "reason":
+                               f"version mismatch: the host has {__version__} and you have {theirs}. "
+                               "Both players need the same version, so ask for the latest build."})
                     conn.close()
                 elif pid is None:
                     conn.send({"t": "reject", "reason": "game is full"})
