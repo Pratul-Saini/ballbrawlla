@@ -1,6 +1,6 @@
 # The big field
 
-Built by `tools/build_field_02_layout.py` (the design lives there as code). 96 platforms in the whole level: 65 thin, 31 solid.
+Built by `tools/build_field_05_layout.py` (the design lives there as code). 96 platforms in the whole level: 65 thin, 31 solid.
 
 ## Idea
 One shared space with two jobs:

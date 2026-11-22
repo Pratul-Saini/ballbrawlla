@@ -7,7 +7,8 @@ Layout (Team.LEFT attacks right):
          end_zone_yards   <------ field_yards ------>   end_zone_yards
 
 The level's inner width (between the side walls) must equal
-(field_yards + 2 * end_zone_yards) * yard_px.
+(field_yards + 2 * end_zone_yards) * yard_px, where yard_px is the level's own
+`yard_px` if it sets one (bigger fields), otherwise Tuning.yard_px.
 """
 
 from __future__ import annotations
@@ -60,6 +61,7 @@ class Field:
         self.inner_left = inner_left
         self.inner_right = inner_right
         ez = tuning.end_zone_yards * self.yard_px
+        self.end_zone_px = ez
         self._goal = {Team.LEFT: inner_left + ez, Team.RIGHT: inner_right - ez}
         self.surfaces = self._find_surfaces()
 

@@ -1,6 +1,6 @@
-"""Generates levels/field_02.json from docs/level-design/layout.json.
+"""Generates levels/field_05.json (the big field) from docs/level-design/layout.json.
 
-    python tools/gen_field_02.py levels/field_02.json
+    python tools/gen_field_05.py levels/field_05.json
 
 The layout file holds the LEFT half; the right half is its mirror (x' = width - x - w).
 Pieces centred on midfield are their own mirror and are written once.
@@ -31,7 +31,7 @@ platforms = [entry(p) for p in left] + [entry(p) for p in right]
 yd = lambda n: lay.WALL + 10 * lay.yard + n * lay.yard  # x of the left team's n-yard line
 floor = lay.floor
 level = {
-    "name": "Field 02",
+    "name": "Field 05",
     "width": lay.W,
     "height": lay.H,
     "wall_thickness": lay.WALL,

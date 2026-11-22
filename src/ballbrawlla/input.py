@@ -1,4 +1,4 @@
-"""Keyboard + mouse -> Intent.
+"""Keyboard + mouse + game controllers -> Intent.
 
 The simulation never reads devices directly; it only sees an Intent. That keeps
 player logic testable and makes a second player / AI a matter of producing
@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 import pygame
 
+from ballbrawlla.gamepad import Gamepads, PadEdges, PadHeld
 from ballbrawlla.physics.vec import Vector2
 
 
@@ -25,10 +26,13 @@ class Intent:
     mouse_held: bool = False      # left button down (and not started on the HUD button)
     mouse_pressed: bool = False   # left button went down this tick (not on the HUD button)
     button_pressed: bool = False  # the on-screen play-call button was clicked
+    # Controller extras
+    jump_held: bool = False       # jump button held (Cross); keeps a jump full height like holding Up
+    aim_stick: tuple[float, float] | None = None  # right stick direction (y up) when pushed
 
     @property
     def up_held(self) -> bool:
-        return self.vertical > 0
+        return self.vertical > 0 or self.jump_held
 
     @property
     def down_held(self) -> bool:
@@ -44,9 +48,11 @@ KEY_THROW = pygame.K_x
 
 
 class KeyboardInput:
-    """Collects key/mouse press edges between physics ticks so none are dropped."""
+    """Collects key/mouse/controller press edges between physics ticks so none
+    are dropped. Any controller plugged into this machine drives the same player."""
 
-    def __init__(self) -> None:
+    def __init__(self, gamepads: bool = True) -> None:
+        self.gamepads = Gamepads() if gamepads else None
         self._pressed: set[int] = set()
         self._mouse_pressed = False
         self._button_pressed = False
@@ -54,7 +60,12 @@ class KeyboardInput:
 
     def handle_event(
         self, event: pygame.event.Event, button_hit: Callable[[tuple[int, int]], bool] | None = None
-    ) -> None:
+    ) -> str | None:
+        """Returns "restart" or "debug" when a controller menu button is pressed."""
+        if self.gamepads is not None:
+            action = self.gamepads.handle_event(event)
+            if action is not None:
+                return action
         if event.type == pygame.KEYDOWN:
             self._pressed.add(event.key)
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -65,6 +76,7 @@ class KeyboardInput:
                 self._mouse_pressed = True
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             self._hold_on_button = False
+        return None
 
     def consume(self, camera: Vector2 | None = None) -> Intent:
         """`camera` is the world position of the screen's top-left corner."""
@@ -74,12 +86,19 @@ class KeyboardInput:
             mx, my = pygame.mouse.get_pos()
             off = camera if camera is not None else Vector2()
             mouse = (mx + off.x, my + off.y)
+        pad, edges = PadHeld(), PadEdges()
+        if self.gamepads is not None:
+            pad, edges = self.gamepads.held(), self.gamepads.consume_edges()
+        key_x = int(held[KEY_RIGHT]) - int(held[KEY_LEFT])
+        key_v = int(held[KEY_UP]) - int(held[KEY_DOWN])
         intent = Intent(
-            move_x=int(held[KEY_RIGHT]) - int(held[KEY_LEFT]),
-            vertical=int(held[KEY_UP]) - int(held[KEY_DOWN]),
-            jump_pressed=KEY_UP in self._pressed,
-            z_pressed=KEY_GRAB_AIM in self._pressed,
-            x_pressed=KEY_THROW in self._pressed,
+            move_x=key_x or pad.move_x,
+            vertical=key_v or pad.vertical,
+            jump_pressed=KEY_UP in self._pressed or edges.jump,
+            z_pressed=KEY_GRAB_AIM in self._pressed or edges.grab,
+            x_pressed=KEY_THROW in self._pressed or edges.throw,
+            jump_held=pad.jump_held,
+            aim_stick=pad.aim_stick,
             mouse=mouse,
             mouse_held=pygame.mouse.get_pressed()[0] and not self._hold_on_button,
             mouse_pressed=self._mouse_pressed,

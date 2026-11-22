@@ -2,7 +2,7 @@
 
 # Phase 3: joining the halves
 
-`levels/field_02.json` is generated from [layout.json](layout.json) by `python tools/gen_field_02.py levels/field_02.json`. The right half is the mirror of the left (x' = 2944 - x - w), and pieces centered on midfield are written once.
+`levels/field_05.json` is generated from [layout.json](layout.json) by `python tools/gen_field_05.py levels/field_05.json`. The right half is the mirror of the left (x' = 2944 - x - w), and pieces centered on midfield are written once.
 
 ## The level
 | | |
@@ -12,7 +12,7 @@
 | Field | Passes the football field check (inner width 2880 px) |
 | Spawn surfaces | 39 standable surfaces. Each team has 5 in its QB region and 31 in its Defender range |
 
-To play it: `python -m ballbrawlla --level levels/field_02.json` (practice), or add `--host`.
+To play it: `python -m ballbrawlla --level levels/field_05.json` (practice), or add `--host`.
 Note: the camera shows 1280 x 720 px at 1:1 for now. The zoomed-out view is a separate piece of work (the `tall-field` spec).
 
 ## Fairness checks (the right side is the mirror)
@@ -30,4 +30,4 @@ The pre-throw clock is 10 s, so a WR can cross the entire floor with 2.7 s to sp
 ## Things I noticed
 - A 140 px block against a 153 px jump leaves only 13 px of clearance. It is fair (the window above is wide enough), but a double jump is the forgiving option.
 - Random inputs almost never score or tag, so the random matches only prove nothing crashes. They say nothing about balance.
-- `field_02` replaces the level described in the `tall-field` spec, which planned its own `field_02.json` and generator. See the open question in [README.md](README.md).
+- `field_05` replaces the level described in the `tall-field` spec, which planned its own `field_05.json` and generator. See the open question in [README.md](README.md).
