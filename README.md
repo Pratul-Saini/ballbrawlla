@@ -68,7 +68,7 @@ src/ballbrawlla/
     snapshot.py        Game state <-> snapshot dict
   render/
     renderer.py        Primitive drawing (players colored per slot), aim ring + arc, debug overlay
-levels/arena_01.json   Platforms as {x, y, w, h}; player_spawns / ball_spawn are centers. Bounds are implicit.
+levels/arena_01.json   Platforms as {x, y, w, h[, type]}; player_spawns / ball_spawn are centers. Bounds are implicit.
 tests/                 Collision, player, multiplayer and loopback network tests
 ```
 
@@ -80,6 +80,11 @@ tests/                 Collision, player, multiplayer and loopback network tests
   and comes to rest when an impact is slower than `ball_rest_speed`.
 - **World**: a rectangle with boundary walls generated automatically, plus any number of
   rectangular platforms (horizontal or vertical, floating or connected).
+- **Platform types**: a platform entry accepts an optional `type` of `"thin"` or `"solid"`.
+  An entry without `type` is solid. Any other value raises a `ValueError`. Players and the ball
+  land on a thin platform only when moving downward from at or above its top edge. They pass through
+  it moving upward or sideways. Solid platforms block from all sides. Dropping down through a thin
+  platform is not supported.
 - **Player**: a state machine. Each state sets velocity from the Intent, scales or caps gravity
   (wall friction), and returns the next state.
 - **Network**: the host is the authority. Clients send Intents at 120 Hz; the host steps

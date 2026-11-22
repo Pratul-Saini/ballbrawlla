@@ -26,22 +26,34 @@ class Contacts:
     wall_right: bool = False
 
 
+ABOVE_TOP_TOL = 1e-6  # px; tolerance for "mover bottom is at/above a thin top"
+
 MAX_AABB_STEP = 8.0  # px; keep below the thinnest platform to prevent tunnelling
 
 
-def move_aabb(box: AABB, vel: Vector2, dt: float, solids: Iterable[AABB]) -> AABB:
+def move_aabb(
+    box: AABB,
+    vel: Vector2,
+    dt: float,
+    solids: Iterable[AABB],
+    thin: Iterable[AABB] = (),
+) -> AABB:
     """Move `box` by vel*dt, resolving X then Y. Zeroes the velocity component
     on any axis that hits a solid (mutates `vel`). Returns the new box.
+    `thin` platforms only stop downward motion that started at/above their top.
     Large moves are split into sub-steps of at most MAX_AABB_STEP px."""
     solids = list(solids)
+    thin = list(thin)
     travel = max(abs(vel.x), abs(vel.y)) * dt
     steps = max(1, math.ceil(travel / MAX_AABB_STEP))
     for _ in range(steps):
-        box = _move_aabb_step(box, vel, dt / steps, solids)
+        box = _move_aabb_step(box, vel, dt / steps, solids, thin)
     return box
 
 
-def _move_aabb_step(box: AABB, vel: Vector2, dt: float, solids: list[AABB]) -> AABB:
+def _move_aabb_step(
+    box: AABB, vel: Vector2, dt: float, solids: list[AABB], thin: list[AABB] = ()
+) -> AABB:
     box = box.shifted(vel.x * dt, 0)
     for s in solids:
         if box.overlaps(s):
@@ -51,6 +63,8 @@ def _move_aabb_step(box: AABB, vel: Vector2, dt: float, solids: list[AABB]) -> A
                 box.x = s.right
             vel.x = 0
 
+    vy = vel.y
+    prev_bottom = box.bottom
     box = box.shifted(0, vel.y * dt)
     for s in solids:
         if box.overlaps(s):
@@ -60,19 +74,35 @@ def _move_aabb_step(box: AABB, vel: Vector2, dt: float, solids: list[AABB]) -> A
                 box.y = s.bottom
             vel.y = 0
 
+    if vy > 0:
+        for t in thin:
+            if box.overlaps(t) and prev_bottom <= t.top + ABOVE_TOP_TOL:
+                box.y = t.top - box.h
+                vel.y = 0
+
     return box
 
 
-def probe_contacts(box: AABB, solids: Iterable[AABB]) -> Contacts:
-    """Detect touching solids by nudging the box 1px in each direction."""
+def probe_contacts(
+    box: AABB, solids: Iterable[AABB], thin: Iterable[AABB] = ()
+) -> Contacts:
+    """Detect touching solids by nudging the box 1px in each direction.
+    Thin platforms only count for `on_ground`, when the box bottom rests on
+    the top edge (within ABOVE_TOP_TOL) and overlaps it horizontally."""
     solids = list(solids)
+    thin = list(thin)
 
     def touching(dx: float, dy: float) -> bool:
         probe = box.shifted(dx, dy)
         return any(probe.overlaps(s) for s in solids)
 
     return Contacts(
-        on_ground=touching(0, 1),
+        on_ground=touching(0, 1) or any(
+            abs(box.bottom - t.top) <= ABOVE_TOP_TOL
+            and box.left < t.right
+            and box.right > t.left
+            for t in thin
+        ),
         on_ceiling=touching(0, -1),
         wall_left=touching(-1, 0),
         wall_right=touching(1, 0),

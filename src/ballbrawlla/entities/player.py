@@ -116,7 +116,14 @@ class Player:
         self.state = new
         self.state.enter(self)
 
-    def update(self, intent: Intent, dt: float, solids: list[AABB], ball: Ball | None) -> None:
+    def update(
+        self,
+        intent: Intent,
+        dt: float,
+        solids: list[AABB],
+        ball: Ball | None,
+        thin: list[AABB] | tuple[AABB, ...] = (),
+    ) -> None:
         self._solids = solids
         self.ball = ball
 
@@ -130,6 +137,6 @@ class Player:
         self.body.integrate_velocity(dt, self.state.gravity_scale(self))
         self.body.vel.y = min(self.body.vel.y, self.state.max_fall_speed(self))
 
-        new_box = move_aabb(self.box, self.body.vel, dt, solids)
+        new_box = move_aabb(self.box, self.body.vel, dt, solids, thin)
         self.body.pos.update(new_box.x, new_box.y)
-        self.contacts = probe_contacts(new_box, solids)
+        self.contacts = probe_contacts(new_box, solids, thin)

@@ -48,9 +48,9 @@ class Game:
     def step(self, intents: Sequence[Intent], dt: float) -> None:
         for p, intent in zip(self.players, intents):
             if p.connected:
-                p.update(intent, dt, self.level.solids, self.ball)
+                p.update(intent, dt, self.level.solids, self.ball, thin=self.level.thin)
         self._resolve_pickups()
-        self.ball.update(dt, self.level.solids)
+        self.ball.update(dt, self.level.solids, thin=self.level.thin)
 
     def _resolve_pickups(self) -> None:
         """Players only *request* a pickup during their update; if several ask on

@@ -9,6 +9,9 @@ from ballbrawlla.physics.vec import Vector2
 BG = (24, 26, 32)
 BOUND = (70, 74, 86)
 PLATFORM = (120, 128, 148)
+THIN_FILL = (84, 140, 160)
+THIN_EDGE = (190, 235, 245)
+THIN_EDGE_HEIGHT = 3
 BALL = (235, 140, 50)
 AIM_RING = (80, 90, 110)
 AIM_LINE = (255, 230, 120)
@@ -38,9 +41,16 @@ class Renderer:
         s.fill(BG)
 
         for plat in game.level.platforms:
-            color = BOUND if plat.kind == "bound" else PLATFORM
             r = plat.rect
-            pygame.draw.rect(s, color, pygame.Rect(r.x, r.y, r.w, r.h))
+            if plat.kind == "bound":
+                pygame.draw.rect(s, BOUND, pygame.Rect(r.x, r.y, r.w, r.h))
+            elif plat.is_thin:
+                pygame.draw.rect(s, THIN_FILL, pygame.Rect(r.x, r.y, r.w, r.h))
+                pygame.draw.rect(
+                    s, THIN_EDGE, pygame.Rect(r.x, r.y, r.w, min(THIN_EDGE_HEIGHT, r.h))
+                )
+            else:
+                pygame.draw.rect(s, PLATFORM, pygame.Rect(r.x, r.y, r.w, r.h))
 
         for p in game.players:
             if p.connected and p.state.name == "aiming":
