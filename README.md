@@ -20,6 +20,19 @@ pytest                          # physics, player, rules, match, network and lev
                                 #   the skill-route sweeps are most of it)
 ```
 
+## Session notes
+
+Press **F2** in any mode to write notes about the session you're playing (playtest feedback,
+bugs, ideas). Enter starts a new line, Ctrl+S saves, Esc or F2 saves and closes. While the panel is
+open your keys only go to the notes; practice, local and sandbox pause, and network games keep
+running with your player standing still.
+
+Notes are saved to `logs/sessions/<date_time>_<mode>_<level>/notes.md`. A session is one run of the
+game: every save in the same run rewrites that same file (reopening the panel brings your notes
+back to keep editing), and the next run starts a new file. The header records the mode, level, start
+time, last save and the score at that moment. Notes are also saved when the game quits.
+`logs/` is git-ignored.
+
 ## Two players on one screen
 
 ```sh

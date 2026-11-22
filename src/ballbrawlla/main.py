@@ -24,6 +24,7 @@ from ballbrawlla.net.client import Client
 from ballbrawlla.net.host import Host
 from ballbrawlla.net.protocol import DEFAULT_PORT, lan_ip
 from ballbrawlla.net.view import make_view
+from ballbrawlla.notes import SessionNotes
 from ballbrawlla.render.match_renderer import Camera, MatchRenderer
 from ballbrawlla.render.renderer import Renderer
 from ballbrawlla.rules.field import Field
@@ -66,6 +67,22 @@ def run(argv: list[str] | None = None) -> None:
         pygame.quit()
 
 
+def _match_context(view_fn) -> str:
+    """One line describing the match, for the notes header."""
+    v = view_fn()
+    if v is None:
+        return ""
+    from ballbrawlla.rules.teams import Team
+    from ballbrawlla.session import ordinal
+    s = v["score"]
+    return (f"Blue {s[0]} - {s[1]} Red, {ordinal(v['down'])} down, {Team(v['offense']).display} on offense, "
+            f"phase {v['phase']}")
+
+
+def _level_label(level: Level) -> str:
+    return level.name
+
+
 def _pad_status(inputs: KeyboardInput) -> str:
     pads = inputs.gamepads.names if inputs.gamepads is not None else []
     return f"   |   controller: {', '.join(pads)}" if pads else ""
@@ -95,6 +112,8 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT) -> Non
     screen = _open_window("ballbrawlla (host, Blue)" if host else "ballbrawlla (practice)")
     renderer = MatchRenderer(screen, level, session.field, TUNING)
     inputs = KeyboardInput()
+    notes = SessionNotes("host" if host else "practice", _level_label(level),
+                         context=lambda: _match_context(lambda: make_view(session, 0)))
     clock = pygame.time.Clock()
     dt = TUNING.dt
     accumulator = 0.0
@@ -106,6 +125,8 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT) -> Non
             accumulator += frame_dt
 
             for event in pygame.event.get():
+                if notes.handle(event):
+                    continue
                 if event.type == pygame.QUIT:
                     running = False
                 elif event.type == pygame.KEYDOWN:
@@ -129,8 +150,10 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT) -> Non
                     session.set_connected(pid, False)
 
             stepped = False
+            if notes.is_open and not server:
+                accumulator = 0.0                 # practice pauses while you write notes
             while accumulator >= dt:
-                intents = [inputs.consume(renderer.camera.pos)]
+                intents = [notes.gate(inputs.consume(renderer.camera.pos))]
                 if server:
                     intents.append(server.intent_for(1))
                 session.step(intents, dt)
@@ -142,10 +165,12 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT) -> Non
                     server.send_to(pid, make_view(session, pid))
 
             status = f"hosting on {address}" if server else "R / Options: restart   F1: debug   Esc: quit"
-            status += _pad_status(inputs)
+            status += "   F2: notes" + _pad_status(inputs)
             renderer.draw(make_view(session, 0), clock.get_fps(), frame_dt, status)
+            notes.draw(screen)
             pygame.display.flip()
     finally:
+        notes.save()
         if server:
             server.close()
 
@@ -166,6 +191,8 @@ def run_couch(level: Level) -> None:
     pads = Gamepads()
     players = [KeyboardInput(keys=BLUE_KEYS, shared_pads=pads, pad_slot=0),
                KeyboardInput(keys=RED_KEYS, shared_pads=pads, pad_slot=1)]
+    notes = SessionNotes("local", _level_label(level),
+                         context=lambda: _match_context(lambda: make_view(session, 0, local=True)))
     clock = pygame.time.Clock()
     dt = TUNING.dt
     accumulator = 0.0
@@ -176,6 +203,8 @@ def run_couch(level: Level) -> None:
         accumulator += frame_dt
 
         for event in pygame.event.get():
+            if notes.handle(event):
+                continue
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN:
@@ -193,6 +222,8 @@ def run_couch(level: Level) -> None:
             for inp in players:
                 inp.handle_event(event, renderer.button_hit)
 
+        if notes.is_open:
+            accumulator = 0.0                     # local play pauses while you write notes
         while accumulator >= dt:
             offense = session.human_of(session.down.offense)
             cam = renderer.camera
@@ -204,9 +235,11 @@ def run_couch(level: Level) -> None:
         names = pads.names
         status = (f"Blue: {BLUE_KEYS.label}   Red: {RED_KEYS.label}   |   "
                   + (f"controllers: {', '.join(names)}   |   " if names else "")
-                  + "F5: new match   F1: debug   Esc: quit")
+                  + "F5: new match   F1: debug   F2: notes   Esc: quit")
         renderer.draw(make_view(session, 0, local=True), clock.get_fps(), frame_dt, status)
+        notes.draw(screen)
         pygame.display.flip()
+    notes.save()
 
 
 def run_client(address: str, port: int = DEFAULT_PORT) -> None:
@@ -227,6 +260,7 @@ def run_client(address: str, port: int = DEFAULT_PORT) -> None:
     dt = tuning.dt
     accumulator = 0.0
     view: dict | None = None
+    notes = SessionNotes("join", _level_label(level), context=lambda: _match_context(lambda: view))
 
     try:
         running = True
@@ -235,6 +269,8 @@ def run_client(address: str, port: int = DEFAULT_PORT) -> None:
             accumulator += frame_dt
 
             for event in pygame.event.get():
+                if notes.handle(event):
+                    continue
                 if event.type == pygame.QUIT:
                     running = False
                 elif event.type == pygame.KEYDOWN:
@@ -247,7 +283,7 @@ def run_client(address: str, port: int = DEFAULT_PORT) -> None:
 
             # Send input at the simulation rate so press edges line up with host ticks.
             while accumulator >= dt:
-                client.send_intent(inputs.consume(renderer.camera.pos))
+                client.send_intent(notes.gate(inputs.consume(renderer.camera.pos)))
                 accumulator -= dt
 
             latest = client.latest_snapshot()
@@ -257,11 +293,13 @@ def run_client(address: str, port: int = DEFAULT_PORT) -> None:
             status = f"connected to {address}:{port}"
             if client.closed:
                 status = "disconnected from host - press Esc to quit"
-            status += _pad_status(inputs)
+            status += "   F2: notes" + _pad_status(inputs)
             if view is not None:
                 renderer.draw(view, clock.get_fps(), frame_dt, status)
+            notes.draw(screen)
             pygame.display.flip()
     finally:
+        notes.save()
         client.close()
 
 
@@ -278,6 +316,7 @@ def run_sandbox(level: Level) -> None:
     renderer = Renderer(screen, field)
     camera = Camera(size)
     inputs = KeyboardInput()
+    notes = SessionNotes("sandbox", _level_label(level))
     clock = pygame.time.Clock()
     dt = TUNING.dt
     accumulator = 0.0
@@ -286,6 +325,8 @@ def run_sandbox(level: Level) -> None:
         frame_dt = min(clock.tick(240) / 1000.0, MAX_FRAME_TIME)
         accumulator += frame_dt
         for event in pygame.event.get():
+            if notes.handle(event):
+                continue
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN:
@@ -300,12 +341,16 @@ def run_sandbox(level: Level) -> None:
                 game.reset()
             elif action == "debug":
                 renderer.debug = not renderer.debug
+        if notes.is_open:
+            accumulator = 0.0                     # the sandbox pauses while you write notes
         while accumulator >= dt:
             game.step([inputs.consume()], dt)
             accumulator -= dt
         camera.follow(game.player.center, level, frame_dt)
         renderer.draw(game, clock.get_fps(), camera=camera.pos)
+        notes.draw(screen)
         pygame.display.flip()
+    notes.save()
 
 
 if __name__ == "__main__":
