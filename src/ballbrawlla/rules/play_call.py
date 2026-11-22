@@ -1,14 +1,18 @@
 """The play call phase of a down.
 
-Offense (keyboard, mouse or controller - see gamepad.py for the buttons):
-  1. Place the QB (only when the down lets the offense pick the spawn):
-     drag the QB with the mouse, or move it with the arrows. It snaps to the
-     nearest platform top inside the allowed region. Z / the button confirms.
+Both sides move a real player with the same movement as in the play (run,
+jump, double jump, wall-cling and climb, slide, crawl):
+
+Offense (keyboard or controller - see gamepad.py for the buttons):
+  1. Place the QB (only when the down lets the offense pick the spawn): move the
+     QB around the level. It can only be confirmed while standing on a platform
+     inside the yellow zone; where it stands becomes its spawn. Z / the button
+     confirms.
   2. Aim: hold the mouse button and point (direction = angle, distance = power),
-     or point the right stick (angle), or use left/right (angle) and up/down (power). X / the button locks in.
-     Clicking the QB again (or Z) goes back to placing.
-Defense: drag the Defender with the mouse, or move it with the arrows, inside
-  its allowed region. Z / X / the button locks in.
+     or point the right stick (angle), or use left/right (angle) and up/down
+     (power). X / the button locks in. Clicking the QB (or Z) goes back to moving it.
+Defense: move the Defender the same way; it locks in (Z / X / the button) only
+  while standing on a platform inside its zone.
 
 Execution starts as soon as both sides are locked in. If the timer runs out
 first, the play call restarts (same down) with everything kept as it was.
@@ -20,11 +24,13 @@ import math
 from dataclasses import dataclass, field
 
 from ballbrawlla.config import Tuning
+from ballbrawlla.entities.player import Player
 from ballbrawlla.input import Intent
 from ballbrawlla.physics.vec import Vector2
 from ballbrawlla.rules.down import ChooseInRegion, Down, defender_x_range, defender_min_yards, qb_x_range
 from ballbrawlla.rules.field import Field, Spot
 from ballbrawlla.rules.teams import Team
+
 
 
 @dataclass
@@ -54,7 +60,7 @@ class PlayCall:
         self.timer = t.play_call_seconds
         self.restarts = 0
 
-        # --- QB
+        # --- QB: a player the offense moves around (while placing)
         self.qb_lo, self.qb_hi = qb_x_range(down, field_)
         if isinstance(down.qb_spawn, ChooseInRegion):
             mid = (down.qb_spawn.start_yards + down.qb_spawn.end_yards) / 2
@@ -62,24 +68,32 @@ class PlayCall:
         else:
             target = down.qb_spawn.spot
         self.qb_spot = field_.spawn_spot(target, self.qb_lo, self.qb_hi)
-        self.placing = down.offense_picks_spawn  # offense step: placing the QB vs aiming
-        self._dragging_qb = False
+        self.qb_player = self._player(self.qb_spot, off.attack_dir)
+        self.qb_ok = True
+        self.placing = down.offense_picks_spawn  # offense step: moving the QB vs aiming
         self._dragging_aim = False
-        self.off_cursor = Vector2(self.qb_spot.x, self.qb_spot.y)
 
         # --- Aim
         default_aim = (45.0 if off.attack_dir > 0 else 135.0, (t.power_min + t.power_max) / 2)
         self.aim_angle, self.aim_power = memory.aim.get(off, default_aim)
 
-        # --- Defender
+        # --- Defender: a player the defense moves around
         self.def_lo, self.def_hi = defender_x_range(down, field_, t)
         default_def = Spot(field_.x_at(off, defender_min_yards(down, field_, t) + 5), field_.floor_y)
         self.def_spot = field_.spawn_spot(memory.def_target.get(dfn, default_def), self.def_lo, self.def_hi)
-        self._dragging_def = False
-        self.def_cursor = Vector2(self.def_spot.x, self.def_spot.y)
+        self.def_player = self._player(self.def_spot, dfn.attack_dir)
+        self.def_ok = True
 
         self.offense_locked = False
         self.defense_locked = defense_auto
+
+    def _player(self, spot: Spot, facing: int) -> Player:
+        p = Player(spot.center(self.t.player_height), self.t)
+        p.facing = facing
+        p.can_throw = False
+        for _ in range(2):          # settle onto the spot: contacts, then the Grounded state
+            self._move(p, Intent(), 0.0)
+        return p
 
     # ------------------------------------------------------------ queries
 
@@ -87,8 +101,13 @@ class PlayCall:
     def done(self) -> bool:
         return self.offense_locked and self.defense_locked
 
+    @staticmethod
+    def feet(p: Player) -> Vector2:
+        return Vector2(p.center.x, p.box.bottom)
+
     def qb_center(self) -> Vector2:
-        return self.qb_spot.center(self.t.player_height)
+        """Where the QB is drawn and aimed from."""
+        return Vector2(self.qb_player.center)
 
     def remember(self, memory: CallMemory) -> None:
         if self.down.offense_picks_spawn:
@@ -110,42 +129,47 @@ class PlayCall:
             self.restarts += 1
         return False
 
-    def _mouse_feet(self, intent: Intent) -> Vector2 | None:
-        """Mouse points at the body; convert to the feet position used by spots."""
-        if intent.mouse is None:
-            return None
-        return Vector2(intent.mouse[0], intent.mouse[1] + self.t.player_height / 2)
+    def _move(self, p: Player, intent: Intent, dt: float) -> None:
+        lv = self.field.level
+        p.update(intent, dt, lv.solids, None, thin=lv.thin)
+
+    def _standing_spot(self, p: Player, lo: float, hi: float) -> tuple[Spot | None, bool]:
+        """The spawn spot under the player's feet, and whether it counts: standing on
+        a platform (not jumping, not clinging) inside [lo, hi]. Standing on a
+        platform's edge counts too; the spot is then moved inward (by at most half a
+        body width) so the spawn is fully on the platform."""
+        if not p.contacts.on_ground or p.vel.y < 0 or p.state.name == "wall_cling":
+            return None, False
+        feet = self.feet(p)
+        spot = self.field.snap(feet, lo, hi)
+        ok = (spot is not None and abs(spot.y - feet.y) <= 1
+              and abs(spot.x - feet.x) <= self.t.player_width / 2)
+        return spot, ok
 
     def _update_offense(self, i: Intent, dt: float) -> None:
         if self.offense_locked:
             return
         can_place = self.down.offense_picks_spawn
 
-        # Mouse
+        # Mouse: aiming only (and clicking the QB to go back to moving it)
         if i.mouse_pressed and i.mouse is not None:
             near_qb = self.qb_center().distance_to(Vector2(i.mouse)) <= self.t.qb_grab_radius
-            if can_place and (self.placing or near_qb):
+            if can_place and near_qb and not self.placing:
                 self.placing = True
-                self._dragging_qb = True
-            else:
+            elif not self.placing:
                 self._dragging_aim = True
         if not i.mouse_held:
-            self._dragging_qb = self._dragging_aim = False
-        if self._dragging_qb and (feet := self._mouse_feet(i)) is not None:
-            self.off_cursor = feet
-            self._snap_qb()
+            self._dragging_aim = False
         if self._dragging_aim and i.mouse is not None:
             self._aim_at(Vector2(i.mouse))
 
-        # Keyboard
         if self.placing:
-            if i.move_x or i.vertical:
-                self.off_cursor += Vector2(i.move_x, -i.vertical) * self.t.cursor_speed * dt
-                self._snap_qb()
-            confirm = i.z_pressed or i.button_pressed
-            if confirm:
+            self._move(self.qb_player, i, dt)
+            spot, self.qb_ok = self._standing_spot(self.qb_player, self.qb_lo, self.qb_hi)
+            if self.qb_ok:
+                self.qb_spot = spot
+            if (i.z_pressed or i.button_pressed) and self.qb_ok:
                 self.placing = False
-                self._dragging_qb = False
         else:
             if i.aim_stick is not None:  # controller: right stick points the throw
                 self.aim_angle = math.degrees(math.atan2(i.aim_stick[1], i.aim_stick[0])) % 360
@@ -153,47 +177,23 @@ class PlayCall:
             self.aim_power = self._clamp_power(self.aim_power + i.vertical * self.t.power_rate * dt)
             if i.z_pressed and can_place:
                 self.placing = True
-                self.off_cursor = Vector2(self.qb_spot.x, self.qb_spot.y)
             elif i.button_pressed:
                 self.offense_locked = True
-        if i.x_pressed:  # X locks in from either step
+        if i.x_pressed and self.qb_ok:  # X locks in from either step - only standing on a platform
             self.placing = False
             self.offense_locked = True
 
     def _update_defense(self, i: Intent, dt: float) -> None:
         if self.defense_locked:
             return
-        if i.mouse_pressed and i.mouse is not None:
-            self._dragging_def = True
-        if not i.mouse_held:
-            self._dragging_def = False
-        if self._dragging_def and (feet := self._mouse_feet(i)) is not None:
-            self.def_cursor = feet
-            self._snap_def()
-        if i.move_x or i.vertical:
-            self.def_cursor += Vector2(i.move_x, -i.vertical) * self.t.cursor_speed * dt
-            self._snap_def()
-        if i.z_pressed or i.x_pressed or i.button_pressed:
+        self._move(self.def_player, i, dt)
+        spot, self.def_ok = self._standing_spot(self.def_player, self.def_lo, self.def_hi)
+        if self.def_ok:
+            self.def_spot = spot
+        if (i.z_pressed or i.x_pressed or i.button_pressed) and self.def_ok:
             self.defense_locked = True
 
     # ------------------------------------------------------------ helpers
-
-    def _clamp_cursor(self, c: Vector2) -> None:
-        lv = self.field.level
-        c.x = min(max(c.x, 0), lv.width)
-        c.y = min(max(c.y, 0), lv.height)
-
-    def _snap_qb(self) -> None:
-        self._clamp_cursor(self.off_cursor)
-        spot = self.field.snap(self.off_cursor, self.qb_lo, self.qb_hi)
-        if spot is not None:
-            self.qb_spot = spot
-
-    def _snap_def(self) -> None:
-        self._clamp_cursor(self.def_cursor)
-        spot = self.field.snap(self.def_cursor, self.def_lo, self.def_hi)
-        if spot is not None:
-            self.def_spot = spot
 
     def _aim_at(self, target: Vector2) -> None:
         d = target - self.qb_center()

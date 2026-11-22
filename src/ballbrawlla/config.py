@@ -84,8 +84,7 @@ class Tuning:
     qb_region_start_yards: float = 0  # 1st-down QB spawn region, yards from offense's goal line
     qb_region_end_yards: float = 10
     defender_gap_yards: float = 10    # defender spawns >= this far past the QB's furthest spot
-    cursor_speed: float = 900         # px/s, arrow-key spawn cursor during the play call
-    qb_grab_radius: float = 40        # px, mouse click this close to the QB starts a drag
+    qb_grab_radius: float = 40        # px, clicking this close to the QB while aiming goes back to moving it
     aim_drag_radius: float = 200      # px, mouse distance from the QB that maps to max power
 
     # --- Play execution ---
