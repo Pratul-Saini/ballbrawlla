@@ -125,6 +125,7 @@ def vault(level, a_yd, start_x, t_dj):
 VAULTS = [("field_12", 33, 27), ("field_13", 4, -3), ("field_14", 36, 29)]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("level,a,seg", VAULTS)
 def test_vault_balcony_is_a_skill_jump(level, a, seg):
     YD, F, MID, TOP, yd = geom(level)

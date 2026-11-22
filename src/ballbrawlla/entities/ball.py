@@ -19,6 +19,13 @@ if TYPE_CHECKING:
     from ballbrawlla.entities.player import Player
 
 
+def _near(rects, x: float, y: float, margin: float) -> list:
+    """The rects that can touch the ball this tick: those overlapping the square of half-size `margin` around it.
+    Cheap float compares only, so a level with hundreds of platforms costs the ball almost nothing."""
+    x0, x1, y0, y1 = x - margin, x + margin, y - margin, y + margin
+    return [r for r in rects if r.x < x1 and r.x + r.w > x0 and r.y < y1 and r.y + r.h > y0]
+
+
 class Ball:
     def __init__(self, spawn: Vector2, tuning: Tuning) -> None:
         self.t = tuning
@@ -55,6 +62,12 @@ class Ball:
         steps = max(1, math.ceil(travel / (self.radius * 0.5)))
         sub_dt = dt / steps
         self.resting = False
+
+        # Broad phase: only platforms within reach of this tick's whole path. A bounce never speeds the ball up and
+        # a push-out is at most one radius, so travel + 2 radii (+ slack) covers everything it can touch.
+        reach = travel + 2 * self.radius + 2
+        solids = _near(solids, self.body.pos.x, self.body.pos.y, reach)
+        thin = _near(thin, self.body.pos.x, self.body.pos.y, reach)
 
         for _ in range(steps):
             prev_bottom = self.body.pos.y + self.radius
