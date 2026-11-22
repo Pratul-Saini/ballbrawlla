@@ -58,14 +58,8 @@ python tools/gen_levels.py [field_NN ...]       # regenerate levels from code
 
 ## State at end of last session (2026-11-22)
 
-- Six stacked PR branches pushed, all targeting `main`, PRs possibly not yet created/merged:
-  1. `pr/1-local-two-player`
-  2. `pr/2-wall-cling` (closes #20)
-  3. `pr/3-carry-speed` (closes #15)
-  4. `pr/4-play-call-movement` (closes #7)
-  5. `pr/5-session-notes`
-  6. `pr/6-controls-hud`
-- `tooly` = top of the stack. Check `git log origin/main` to see what merged.
+- Merged into `main` on 2026-11-22: PRs #22-#27 (local two-player, one cling per wall, slower carrier, play-call movement, F2 session notes, F3 controls HUD). Issues #20, #15, #7 closed by them.
+- This docs update is PR branch `pr/7-docs` (= `tooly`).
 - #7 note: the issue wanted mid-air confirm to drop the QB to the platform below; built as "confirm only while standing" (user's instruction).
 - Open issues not started:
   - #8 turnover-on-downs spot rules
