@@ -97,10 +97,11 @@ class Airborne(State):
             p.vel.x = intent.move_x * p.t.air_speed
             _face(p, intent.move_x)
 
-        # Press into a wall to stick to it.
-        if p.contacts.wall_left and intent.move_x < 0:
+        # Press into a wall to stick to it - unless this jump is going to carry you
+        # over it anyway (ledge assist: running up steps doesn't get you stuck).
+        if p.contacts.wall_left and intent.move_x < 0 and not p.will_clear_wall(-1, intent.up_held):
             return WallCling(-1)
-        if p.contacts.wall_right and intent.move_x > 0:
+        if p.contacts.wall_right and intent.move_x > 0 and not p.will_clear_wall(1, intent.up_held):
             return WallCling(1)
 
         if intent.jump_pressed and p.jumps_left > 0:

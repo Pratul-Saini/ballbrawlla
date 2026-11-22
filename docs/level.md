@@ -102,7 +102,7 @@ These come from the player's movement numbers in [player.md](player.md).
 Guidelines:
 - A ledge up to about 150 px above where you stand is reachable with a normal jump. Up to about 255 px needs a double jump. Higher needs walls or a chain of ledges.
 - Horizontal speed is fixed at 320 px/s, so a single jump crosses a gap of about 240 px. A double jump extends that. Wider gaps need a wall or a stepping platform.
-- Leave at least 48 px of headroom under a solid platform if you want players to stand under it, or 30 px if they should only crouch under it.
+- Leave at least 42 px of headroom under a solid platform if you want players to stand under it, or 26 px if they should only crouch under it.
 - Platform thickness: any value of 1 px or more is safe from tunnelling, even at the maximum throw speed. 20 px reads well.
 - Keep platforms from overlapping each other. The collision code resolves them one by one and assumes separate rectangles.
 - Solid walls are the only thing players can cling to. Put some in if you want wall play.

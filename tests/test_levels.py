@@ -46,8 +46,9 @@ def test_qb_and_defender_have_spawn_spots(field, team):
 
 
 def _reachable(field: Field) -> tuple[set[int], list]:
-    """BFS over standing surfaces. Up to ~140 px up: up to 260 px across.
-    Up to ~240 px up (double jump): up to 140 px across. Down: up to 450 px across."""
+    """BFS over standing surfaces (jump envelope, ignoring what's in the way):
+    down: <= 450 px across; up <= 60 (double jump, long): <= 330 across;
+    up <= 140: <= 260 across; up <= 240 (double jump, high): <= 140 across."""
     S = field.surfaces
     start = {i for i, s in enumerate(S) if s.y == field.floor_y}
     seen, q = set(start), deque(start)
@@ -58,7 +59,8 @@ def _reachable(field: Field) -> tuple[set[int], list]:
                 continue
             up = a.y - b.y
             gap = max(0.0, b.x0 - a.x1, a.x0 - b.x1)
-            if (up <= 0 and gap <= 450) or (up <= 140 and gap <= 260) or (up <= 240 and gap <= 140):
+            if ((up <= 0 and gap <= 450) or (up <= 60 and gap <= 330)
+                    or (up <= 140 and gap <= 260) or (up <= 240 and gap <= 140)):
                 seen.add(j)
                 q.append(j)
     return seen, S

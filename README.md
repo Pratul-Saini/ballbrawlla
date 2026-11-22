@@ -14,9 +14,10 @@ python -m venv .venv
 pip install -e .[dev]
 python -m ballbrawlla           # practice: you on offense vs a defender that stands still
 python -m ballbrawlla --sandbox # free play in the small arena, no rules (movement tuning)
-python -m ballbrawlla --sandbox --level field_02   # free play on a match field (field_01..field_04)
+python -m ballbrawlla --sandbox --level field_02   # free play on a match field (field_01..field_14)
 python -m ballbrawlla --level field_03             # a match on another field (also works with --host)
-pytest                          # physics, player, rules, match and network tests
+pytest                          # physics, player, rules, match, network and level-route tests (~2 min;
+                                #   the skill-route sweeps are most of it)
 ```
 
 ## Local network play (2 players)
@@ -56,7 +57,7 @@ python -m ballbrawlla --join 192.168.x.y   # machine B
 |---|---|
 | ← / → | Run (fixed speed) |
 | ↑ | Jump / double jump / hop up a wall |
-| ↓ | Crouch (standing) / slide (running) |
+| ↓ | Crouch (standing) / slide (running); hold ←/→ while crouched to crawl |
 | Z | Catch / pick up the ball · tag the opponent carrying the ball |
 | R / F1 / Esc | New match (practice / host only) · debug overlay · quit |
 
@@ -120,7 +121,7 @@ src/ballbrawlla/
     match_renderer.py  Draws a match from a view: camera, field markings, play call, HUD, minimap
     renderer.py        Sandbox drawing of a raw Game (camera optional)
     field_markers.py   Yard lines, end zones and numbers, shared by both renderers
-levels/field_0N.json   Match fields 01-04 (100 yd + end zones; bigger levels set their own yard_px)
+levels/field_NN.json   Match fields 01-14 (100 yd + end zones; bigger levels set their own yard_px)
 tools/gen_levels.py    Generates every field level (python tools/gen_levels.py)
 levels/arena_01.json   Small sandbox arena. Platforms are {x, y, w, h[, type]}; bounds are implicit.
 tests/                 Collision, player, catching, platforms, rules, match session and network tests

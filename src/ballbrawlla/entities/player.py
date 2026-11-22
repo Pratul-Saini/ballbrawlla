@@ -84,6 +84,21 @@ class Player:
         self.h = new_h
         return True
 
+    def will_clear_wall(self, side: int, up_held: bool = True) -> bool:
+        """True if the rest of the current upward motion will lift my feet above the
+        top of the wall I'm touching on `side` (-1 left, +1 right)."""
+        vy = self.vel.y
+        if vy >= 0:
+            return False
+        if self.jump_cut_ready and not up_held:
+            vy *= self.t.jump_cut_multiplier  # releasing Up is about to cut this jump
+        probe = self.box.shifted(side, 0)
+        tops = [s.top for s in self._solids if probe.overlaps(s)]
+        if not tops:
+            return False
+        rise = vy * vy / (2 * self.t.player_gravity)
+        return rise >= self.box.bottom - min(tops)
+
     def can_stand(self) -> bool:
         full = self.t.player_height
         dy = self.h - full

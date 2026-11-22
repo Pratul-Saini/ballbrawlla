@@ -24,7 +24,7 @@ The sky deck is deliberately broken. To keep going you must land on the 24 px to
 So each leg is a single jump with a tight take-off, and the pipe cannot be skipped, because the total is over 340. `tools/skill_check.py` verifies this for every pipe with real physics.
 
 ### Slide under a pipe (ground, mid deck)
-A low roof leaves a 32 px gap (a crouched player is 30 px tall). Tunnels are 100 to 124 px long.
+A low roof leaves a 32 px gap (a crouched player is 26 px tall; a standing one, 42). Tunnels are 100 to 124 px long.
 
 | Tunnel length | Window to start the slide | A bad start costs |
 |---|---|---|

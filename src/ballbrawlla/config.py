@@ -15,9 +15,12 @@ class Tuning:
     max_players: int = 2  # network play: host + (max_players - 1) clients
 
     # --- Player body ---
-    player_width: float = 28
-    player_height: float = 48
-    player_crouch_height: float = 30
+    # Smaller than the first prototype (28 x 48) so levels feel bigger. 42 px standing is
+    # still taller than every slide-under gap in the levels (<= 40 px), and the 26 px
+    # crouch still fits under them.
+    player_width: float = 24
+    player_height: float = 42
+    player_crouch_height: float = 26
     player_gravity: float = 2200
     player_max_fall_speed: float = 1200
 
