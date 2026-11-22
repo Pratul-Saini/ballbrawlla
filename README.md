@@ -20,6 +20,26 @@ pytest                          # physics, player, rules, match, network and lev
                                 #   the skill-route sweeps are most of it)
 ```
 
+## Two players on one screen
+
+```sh
+python -m ballbrawlla --local                    # any level: --local --level field_09
+```
+
+Both players share one window and see everything, including the throw aim and the Defender's
+spawn. The camera zooms out (down to 40%) to keep both players in view, and the ball while it's in the air.
+
+| | Blue | Red |
+|---|---|---|
+| Move / jump / down | W A S D | Arrow keys |
+| Catch, pick up, tag, confirm | F | . (period) |
+| Lock in, throw | G | / (slash) |
+| Controller | first one connected | second one connected |
+
+During the play call the **mouse belongs to whichever side is on offense** (drag the QB, aim, and
+the on-screen button). **F5** or a controller's **Options** starts a new match. R is not used here,
+because it sits next to Blue's keys. F1 toggles the debug overlay and Esc quits.
+
 ## Local network play (2 players)
 
 Both machines need this repo installed as above and on the same network.

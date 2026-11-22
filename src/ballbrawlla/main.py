@@ -4,6 +4,7 @@ regardless of frame rate.
     ballbrawlla                     practice: you on offense vs a defender that stands still
     ballbrawlla --host              host a 2-player LAN match (you are Blue)
     ballbrawlla --join 192.168.x.y  join a LAN match (you are Red)
+    ballbrawlla --local             two players on one screen (Blue: WASD + F/G, Red: arrows + . and /)
     ballbrawlla --sandbox           free play in the small arena (physics tuning, no rules)
     ballbrawlla --sandbox --level field_01   free play on the big match field
 """
@@ -17,7 +18,8 @@ import pygame
 
 from ballbrawlla.config import TUNING, Tuning
 from ballbrawlla.game import Game
-from ballbrawlla.input import KeyboardInput
+from ballbrawlla.gamepad import Gamepads
+from ballbrawlla.input import BLUE_KEYS, RED_KEYS, KeyboardInput
 from ballbrawlla.net.client import Client
 from ballbrawlla.net.host import Host
 from ballbrawlla.net.protocol import DEFAULT_PORT, lan_ip
@@ -42,6 +44,7 @@ def run(argv: list[str] | None = None) -> None:
     mode.add_argument("--host", action="store_true", help="host a local network match")
     mode.add_argument("--join", metavar="ADDRESS", help="join a host at this IP address")
     mode.add_argument("--sandbox", action="store_true", help="free play, no rules")
+    mode.add_argument("--local", action="store_true", help="two players on one screen")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     args = parser.parse_args(argv)
     if args.level is not None and not args.level.exists():
@@ -55,6 +58,8 @@ def run(argv: list[str] | None = None) -> None:
             run_client(args.join, args.port)
         elif args.sandbox:
             run_sandbox(load_level(args.level or SANDBOX_LEVEL))
+        elif args.local:
+            run_couch(load_level(args.level or DEFAULT_LEVEL))
         else:
             run_match(load_level(args.level or DEFAULT_LEVEL), host=args.host, port=args.port)
     finally:
@@ -143,6 +148,65 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT) -> Non
     finally:
         if server:
             server.close()
+
+
+def run_couch(level: Level) -> None:
+    """Two players on one screen and one machine. Nothing is hidden; the camera
+    zooms out to keep both players in view. Blue uses W A S D + F (catch / tag /
+    confirm) + G (lock in); Red uses the arrows + . and /. The first controller to
+    connect is Blue's, the second Red's. During the play call the mouse belongs to
+    whichever side is on offense. F5 (or Options) starts a new match - not R,
+    which sits next to Blue's keys."""
+    session = Session(level, TUNING, humans=2)
+    session.set_connected(1, True)
+
+    screen = _open_window("ballbrawlla (local 2-player)")
+    renderer = MatchRenderer(screen, level, session.field, TUNING)
+    renderer.key_names = {"grab": "F / . / Square", "lock": "G / slash / Circle", "restart": "F5"}
+    pads = Gamepads()
+    players = [KeyboardInput(keys=BLUE_KEYS, shared_pads=pads, pad_slot=0),
+               KeyboardInput(keys=RED_KEYS, shared_pads=pads, pad_slot=1)]
+    clock = pygame.time.Clock()
+    dt = TUNING.dt
+    accumulator = 0.0
+
+    running = True
+    while running:
+        frame_dt = min(clock.tick(240) / 1000.0, MAX_FRAME_TIME)
+        accumulator += frame_dt
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                elif event.key == pygame.K_F5:
+                    session.new_match()
+                elif event.key == pygame.K_F1:
+                    renderer.debug = not renderer.debug
+            action = pads.handle_event(event)
+            if action == "restart":
+                session.new_match()
+            elif action == "debug":
+                renderer.debug = not renderer.debug
+            for inp in players:
+                inp.handle_event(event, renderer.button_hit)
+
+        while accumulator >= dt:
+            offense = session.human_of(session.down.offense)
+            cam = renderer.camera
+            intents = [inp.consume(cam.pos, cam.zoom, use_mouse=(pid == offense))
+                       for pid, inp in enumerate(players)]
+            session.step(intents, dt)
+            accumulator -= dt
+
+        names = pads.names
+        status = (f"Blue: {BLUE_KEYS.label}   Red: {RED_KEYS.label}   |   "
+                  + (f"controllers: {', '.join(names)}   |   " if names else "")
+                  + "F5: new match   F1: debug   Esc: quit")
+        renderer.draw(make_view(session, 0, local=True), clock.get_fps(), frame_dt, status)
+        pygame.display.flip()
 
 
 def run_client(address: str, port: int = DEFAULT_PORT) -> None:

@@ -33,10 +33,12 @@ class FieldMarkers:
         self._tint_cache: dict[tuple[Team, int], pygame.Surface] = {}
         self._label_cache: dict[tuple[str, bool], pygame.Surface] = {}
 
-    def _tint(self, team: Team, height: int) -> pygame.Surface:
-        key = (team, height)
+    def _tint(self, team: Team, height: int, width: int) -> pygame.Surface:
+        key = (team, height, width)
         if key not in self._tint_cache:
-            surf = pygame.Surface((round(self.field.end_zone_px), height), pygame.SRCALPHA)
+            if len(self._tint_cache) > 16:
+                self._tint_cache.clear()          # zooming makes many widths; keep it small
+            surf = pygame.Surface((max(1, width), height), pygame.SRCALPHA)
             surf.fill((*TEAM_COLORS[team], END_ZONE_ALPHA))
             self._tint_cache[key] = surf
         return self._tint_cache[key]
@@ -48,26 +50,29 @@ class FieldMarkers:
             self._label_cache[key] = font.render(text, True, color)
         return self._label_cache[key]
 
-    def draw(self, screen: pygame.Surface, camera: Vector2, pinned_label_y: float | None = None) -> None:
+    def draw(self, screen: pygame.Surface, camera: Vector2, pinned_label_y: float | None = None,
+             zoom: float = 1.0) -> None:
+        """`camera` is the world position of the screen's top-left; `zoom` the scale."""
         f = self.field
         t = f.t
         sw, sh = screen.get_size()
         cx, cy = camera.x, camera.y
-        floor_sy = f.floor_y - cy
+        floor_sy = (f.floor_y - cy) * zoom
+        ez_w = f.end_zone_px * zoom
 
         # End zones
         for team in Team:
             x0 = f.goal_line_x(team) - (f.end_zone_px if team is Team.LEFT else 0)
-            sx = x0 - cx
-            if sx + f.end_zone_px < 0 or sx > sw:
+            sx = (x0 - cx) * zoom
+            if sx + ez_w < 0 or sx > sw:
                 continue
-            screen.blit(self._tint(team, sh), (sx, 0))
+            screen.blit(self._tint(team, sh, round(ez_w)), (sx, 0))
             name = self._label(team.display.upper(), painted=True)
-            screen.blit(name, (sx + (f.end_zone_px - name.get_width()) / 2, floor_sy - 70))
+            screen.blit(name, (sx + (ez_w - name.get_width()) / 2, floor_sy - 70))
 
         # Lines every 5 yards
         for yards in range(0, int(t.field_yards) + 1, 5):
-            sx = f.x_at(Team.LEFT, yards) - cx
+            sx = (f.x_at(Team.LEFT, yards) - cx) * zoom
             if sx < -60 or sx > sw + 60:
                 continue
             if yards in (0, t.field_yards):
