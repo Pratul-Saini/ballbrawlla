@@ -10,6 +10,7 @@ Each tick:
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 
 from ballbrawlla.config import Tuning
 from ballbrawlla.entities.ball import Ball
@@ -40,6 +41,8 @@ class Player:
         self.held_ball: Ball | None = None
         self.ball: Ball | None = None  # the ball in the world, set each tick
         self.pickup_requested = False  # resolved by Game after all players update
+        self.pickup_buffer = 0         # ticks left on an armed Z press
+        self.ball_trail: Sequence[Vector2] = ()  # host's recent Free-ball positions, set each tick
         self.aim_angle = 45.0          # degrees, 0 = right, 90 = up (full circle)
         self.aim_power = (tuning.power_min + tuning.power_max) / 2
 
@@ -90,11 +93,37 @@ class Player:
             and self.center.distance_to(b.pos) <= self.t.pickup_radius
         )
 
-    def try_pickup(self) -> None:
-        """Request the ball. Game grants it at the end of the tick (closest
-        requester wins if two players reach for it at once)."""
-        if self.ball_in_reach():
+    def pickup_distance(self) -> float | None:
+        """Smallest distance from my center to the ball's current or recent positions.
+        None if there is no ball, it is held, or I already hold it."""
+        b = self.ball
+        if b is None or b.held_by is not None or self.held_ball is not None:
+            return None
+        c = self.center
+        return min(c.distance_to(q) for q in (b.pos, *self.ball_trail))
+
+    def ball_in_grace_reach(self) -> bool:
+        d = self.pickup_distance()
+        return d is not None and d <= self.t.pickup_radius
+
+    def _pickup_step(self, z_pressed: bool) -> None:
+        """The one place a pickup is attempted. Game grants it at the end of the
+        tick (closest requester wins if two players reach for it at once)."""
+        if self.held_ball is not None:
+            self.pickup_buffer = 0
+            return
+        if not self.state.allows_pickup:
+            return
+        if z_pressed:
+            pass
+        elif self.pickup_buffer > 0:
+            self.pickup_buffer -= 1
+        else:
+            return
+        if self.ball_in_grace_reach():
             self.pickup_requested = True
+        elif z_pressed:
+            self.pickup_buffer = self.t.pickup_buffer_ticks
 
     def aim_direction(self) -> Vector2:
         a = math.radians(self.aim_angle)
@@ -123,9 +152,12 @@ class Player:
         solids: list[AABB],
         ball: Ball | None,
         thin: list[AABB] | tuple[AABB, ...] = (),
+        ball_trail: Sequence[Vector2] = (),
     ) -> None:
         self._solids = solids
         self.ball = ball
+        self.ball_trail = ball_trail
+        self._pickup_step(intent.z_pressed)
 
         nxt = self.state.update(self, intent, dt)
         if nxt is not None:

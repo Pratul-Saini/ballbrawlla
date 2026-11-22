@@ -4,6 +4,7 @@ Units: pixels, seconds, degrees. Screen coordinates are y-down, so "up" is -y.
 Tweak these to change game feel; nothing else should hardcode gameplay numbers.
 """
 
+import math
 from dataclasses import dataclass
 
 
@@ -52,7 +53,9 @@ class Tuning:
     ball_rolling_drag: float = 1.5    # per-second horizontal decay while resting on a floor
 
     # --- Pick up / aim / throw ---
-    pickup_radius: float = 40         # player-center to ball-center distance for Z pickup
+    pickup_radius: float = 55         # player-center to ball-center distance for Z pickup
+    pickup_buffer_time: float = 0.1   # seconds a Z press stays armed waiting for the ball to arrive
+    pickup_grace_time: float = 0.1    # seconds a Z press still counts after the ball left reach (host-judged)
     throw_enabled: bool = True        # set False to disable the throw phase for testing
     aim_rate: float = 180             # degrees per second (left/right)
     power_min: float = 300
@@ -62,6 +65,14 @@ class Tuning:
     @property
     def dt(self) -> float:
         return 1.0 / self.physics_hz
+
+    @property
+    def pickup_buffer_ticks(self) -> int:
+        return max(0, math.ceil(self.pickup_buffer_time * self.physics_hz - 1e-9))
+
+    @property
+    def pickup_grace_ticks(self) -> int:
+        return max(0, math.ceil(self.pickup_grace_time * self.physics_hz - 1e-9))
 
 
 TUNING = Tuning()
