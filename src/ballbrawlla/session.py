@@ -10,7 +10,8 @@ Phase flow for every down:
 Humans: index 0 is Team.LEFT (Blue), index 1 is Team.RIGHT (Red). On offense a
 human controls the WR (the QB is placed in the play call and throws by itself);
 on defense they control the Defender. With one human (practice) the defense
-never moves.
+never moves (or, with defender=False for catch practice, there is no defender), and after
+a touchdown the human swaps to the other team and attacks the other end zone.
 """
 
 from __future__ import annotations
@@ -46,7 +47,8 @@ def ordinal(n: int) -> str:
 
 
 class Session:
-    def __init__(self, level: Level, tuning: Tuning, humans: int = 1, seed: int | None = None) -> None:
+    def __init__(self, level: Level, tuning: Tuning, humans: int = 1, seed: int | None = None,
+                 defender: bool = True) -> None:
         if humans not in (1, 2):
             raise ValueError("a session has 1 (practice) or 2 humans")
         self.level = level
@@ -54,6 +56,8 @@ class Session:
         self.field = Field(level, tuning)
         self.humans = humans
         self.practice = humans == 1
+        # Catch practice: no defender at all. One human only; a 2-human game always has a defender.
+        self.defender = defender or humans == 2
         self.team_of_human = [Team.LEFT, Team.RIGHT][:humans]
         self.connected = [True] + [False] * (humans - 1)
         self.rng = random.Random(seed)
@@ -72,6 +76,7 @@ class Session:
 
     def new_match(self) -> None:
         self.match = Match.start(self.t, self.rng, practice=self.practice)
+        self._follow_human_team()
         self.memory = CallMemory()
         self.call: PlayCall | None = None
         self.game: Game | None = None
@@ -85,6 +90,11 @@ class Session:
             self._start_play_call()
         else:
             self.phase = Phase.WAITING
+
+    def _follow_human_team(self) -> None:
+        """Practice: the human plays whichever team the match says (it swaps after a touchdown)."""
+        if self.practice:
+            self.team_of_human = [self.match.human]
 
     @property
     def down(self) -> Down:
@@ -154,11 +164,14 @@ class Session:
         wr_x = c.qb_spot.x + off.attack_dir * (self.t.player_width + 4)
         wr_spot = self.field.spawn_spot(Spot(wr_x, c.qb_spot.y), wr_x, wr_x)
         wr = self._make_actor(wr_spot, Role.WR, off, pid=0)
-        df = self._make_actor(c.def_spot, Role.DEF, dfn, pid=1)
-        df.facing = dfn.attack_dir
+        actors = [wr]
+        if self.defender:
+            df = self._make_actor(c.def_spot, Role.DEF, dfn, pid=1)
+            df.facing = dfn.attack_dir
+            actors.append(df)
 
-        game = Game(self.level, self.t, num_players=2)
-        game.players = [wr, df]
+        game = Game(self.level, self.t, num_players=len(actors))
+        game.players = actors
         ball = Ball(qb.hand_pos(), self.t)
         ball.held_by = qb
         qb.held_ball = ball
@@ -172,7 +185,8 @@ class Session:
 
     def _step_execution(self, off_i: Intent, def_i: Intent, dt: float) -> None:
         g = self.game
-        wr, df = g.players
+        wr = g.players[0]
+        df = g.players[1] if len(g.players) > 1 else None      # None in catch practice
         g.step([off_i, def_i], dt)
 
         if self.phase is Phase.PRE_THROW:
@@ -203,7 +217,7 @@ class Session:
             return
 
         tagger, tag_intent = (df, def_i) if is_wr else (wr, off_i)
-        if tag_intent.z_pressed and tagger.center.distance_to(carrier.center) <= self.t.tag_radius:
+        if tagger is not None and tag_intent.z_pressed and tagger.center.distance_to(carrier.center) <= self.t.tag_radius:
             spot = Spot(carrier.last_ground.x, carrier.last_ground.y)
             self._end(PlayResult(Outcome.TAGGED if is_wr else Outcome.INTERCEPTION_TAGGED, spot))
 
@@ -211,6 +225,7 @@ class Session:
         before = self.down
         self.result = result
         scorer = self.match.apply(result)
+        self._follow_human_team()
         self.message = describe(before, result, scorer, self.down)
         self.phase = Phase.DEAD
         self.timer = self.t.result_pause_seconds

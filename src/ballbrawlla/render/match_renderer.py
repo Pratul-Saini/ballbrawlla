@@ -377,7 +377,7 @@ class MatchRenderer:
         else:
             line += f"   |   You: {me.display} ({view['side']})"
         if view["practice"]:
-            line += "   |   practice"
+            line += "   |   practice" if view.get("defender", True) else "   |   catch practice"
         self._text(line, (40, top))
 
         for i, hint in enumerate(hints):
@@ -446,6 +446,8 @@ class MatchRenderer:
             back = f" - {grab} / click QB: move it" if call["picks"] else ""
             return prefix + f"Aim (mouse, right stick or keys) - {lock} / button: lock in" + back
         if phase == "pre_throw":
+            if not view.get("defender", True):
+                return f"THROW IN {timer:4.1f}s - get open"
             return f"THROW IN {timer:4.1f}s - get open (WR) / get in position (DEF)"
         if phase == "live":
             holder = view["ball"]["holder"]
@@ -453,6 +455,8 @@ class MatchRenderer:
                 return (f"LOOSE BALL - dead in {timer:3.1f}s, {grab} to pick up" if timer is not None
                         else f"Ball in the air - {grab} to catch")
             if holder == "WR":
+                if not view.get("defender", True):
+                    return "You have the ball: run to the end zone"
                 return f"WR has the ball: run to the end zone / DEF: {grab} to tag"
             return f"INTERCEPTION: DEF runs the other way / WR: {grab} to tag"
         return ""
@@ -461,8 +465,9 @@ class MatchRenderer:
         phase, timer = view["phase"], view.get("timer")
         if phase == PLAY_CALL:
             call = view["call"]
-            locks = (f"offense {'locked' if call['off_locked'] else '...'}, "
-                     f"defense {'locked' if call['def_locked'] else '...'}")
+            locks = f"offense {'locked' if call['off_locked'] else '...'}"
+            if view.get("defender", True):
+                locks += f", defense {'locked' if call['def_locked'] else '...'}"
             restarted = "  (play call restarted)" if call["restarts"] else ""
             return f"PLAY CALL {timer:4.1f}s   [{locks}]{restarted}"
         if phase == "pre_throw":

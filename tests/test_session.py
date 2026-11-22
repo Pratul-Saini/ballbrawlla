@@ -370,6 +370,57 @@ def test_practice_defense_is_auto_locked_and_never_moves():
     assert df.center.x == pytest.approx(x)
 
 
+def make_catch_session(**tuning) -> Session:
+    t = Tuning(**{**FAST, **tuning})
+    return Session(Level(width=1024, height=400), t, humans=1, defender=False)
+
+
+def score_touchdown(s: Session):
+    """Run one play to a touchdown, carrying the ball into the end zone the human is attacking."""
+    off = s.down.offense
+    lock_in(s)
+    step(s, ticks=int(s.t.pre_throw_seconds * s.t.physics_hz) + 2)
+    wr = s.game.players[0]
+    give_ball(s, wr)
+    place(wr, s.field.x_at(off, 105), FLOOR - 80)
+    for _ in range(200):
+        step(s)
+        if s.phase is Phase.DEAD:
+            return
+    raise AssertionError("no touchdown")
+
+
+def test_catch_practice_has_no_defender():
+    s = make_catch_session()
+    assert s.defender is False
+    lock_in(s)
+    assert len(s.game.players) == 1 and s.game.players[0].role.name == "WR"
+    v = make_view(s, 0)
+    assert [a["role"] for a in v["actors"]] == ["QB", "WR"] and v["defender"] is False
+    json.dumps(v)
+
+
+def test_normal_practice_still_has_its_defender_and_two_humans_always_do():
+    assert make_session(humans=1).defender is True
+    assert Session(Level(width=1024, height=400), Tuning(**FAST), humans=2, defender=False).defender is True
+
+
+def test_catch_practice_touchdown_swaps_you_to_the_other_side_and_end_zone():
+    s = make_catch_session()
+    first = s.down.offense
+    assert s.team_of_human == [first] == [Team.LEFT]
+    score_touchdown(s)
+    assert s.match.score[first] == 1 and s.result.outcome is Outcome.TOUCHDOWN
+    step(s, ticks=int(s.t.result_pause_seconds * s.t.physics_hz) + 3)       # on to the next play
+    assert s.phase is Phase.PLAY_CALL
+    assert s.down.offense is first.other and s.team_of_human == [first.other]   # you are the other team now
+    assert s.down.number == 1
+    assert s.human_of(s.down.offense) == 0                                      # and you are still on offense
+    assert first.other.attack_dir == -first.attack_dir                          # heading the other way
+    score_touchdown(s)                                                          # and you can score going back
+    assert s.match.score[first.other] == 1
+
+
 # ---------------------------------------------------------------- views / hidden info
 
 def test_views_hide_the_other_sides_secrets():

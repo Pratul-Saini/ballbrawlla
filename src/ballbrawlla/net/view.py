@@ -51,6 +51,7 @@ def make_view(s: Session, pid: int, local: bool = False) -> dict:
         "team": int(my_team),
         "side": side,
         "practice": s.practice,
+        "defender": s.defender,
         "connected": list(s.connected),
         "down": d.number,
         "offense": int(d.offense),
@@ -89,9 +90,9 @@ def make_view(s: Session, pid: int, local: bool = False) -> dict:
         v["timer"] = _r(c.timer)
 
     if s.game is not None and s.phase in (Phase.PRE_THROW, Phase.LIVE, Phase.DEAD):
-        wr, df = s.game.players
+        wr, *others = s.game.players          # the defender is absent in catch practice
         b = s.game.ball
-        v["actors"] = [_actor(s.qb), _actor(wr), _actor(df)]
+        v["actors"] = [_actor(s.qb), _actor(wr), *(_actor(p) for p in others)]
         holder = b.held_by
         v["ball"] = {
             "x": _r(b.pos.x),

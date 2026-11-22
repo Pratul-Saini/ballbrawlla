@@ -16,7 +16,8 @@ class Match:
     down: Down
     score: dict[Team, int] = field(default_factory=lambda: {Team.LEFT: 0, Team.RIGHT: 0})
     winner: Team | None = None
-    practice: bool = False  # single player: Team.LEFT is always on offense
+    practice: bool = False  # single player: the human is always on offense
+    human: Team = Team.LEFT  # practice only: the team the human plays; swaps after a touchdown
 
     @classmethod
     def start(cls, t: Tuning, rng: random.Random | None = None, practice: bool = False) -> "Match":
@@ -31,7 +32,10 @@ class Match:
             self.score[scorer] += 1
             if self.score[scorer] >= self.t.touchdowns_to_win:
                 self.winner = scorer
-        if self.practice and nxt.offense is not Team.LEFT:
-            nxt = possession_start(Team.LEFT, self.t)
+        if self.practice:
+            if scorer is not None:
+                self.human = nxt.offense                     # touchdown: you swap sides and attack the other end zone
+            elif nxt.offense is not self.human:
+                nxt = possession_start(self.human, self.t)   # turnover on downs: you keep the ball
         self.down = nxt
         return scorer
