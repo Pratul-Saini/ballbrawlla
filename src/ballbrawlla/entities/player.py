@@ -87,6 +87,28 @@ class Player:
         self.h = new_h
         return True
 
+    # ------------------------------------------------------------ speeds
+
+    @property
+    def _carry(self) -> float:
+        return self.t.carry_speed_multiplier if self.held_ball is not None else 1.0
+
+    @property
+    def run_speed(self) -> float:
+        return self.t.run_speed * self._carry
+
+    @property
+    def air_speed(self) -> float:
+        return self.t.air_speed  # not slowed by the ball: jumping is how a carrier escapes
+
+    @property
+    def slide_speed(self) -> float:
+        return self.t.slide_speed * self._carry
+
+    @property
+    def crawl_speed(self) -> float:
+        return self.t.crawl_speed * self._carry
+
     # ------------------------------------------------------------ walls
 
     def touching_wall(self, side: int) -> AABB | None:

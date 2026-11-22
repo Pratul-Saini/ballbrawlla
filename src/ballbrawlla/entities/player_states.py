@@ -72,7 +72,7 @@ class Grounded(State):
     def update(self, p: Player, intent: Intent, dt: float) -> State | None:
         if not p.contacts.on_ground:
             return Airborne()
-        p.vel.x = intent.move_x * p.t.run_speed
+        p.vel.x = intent.move_x * p.run_speed
         _face(p, intent.move_x)
 
         if (nxt := _grab_or_aim(p, intent)) is not None:
@@ -95,7 +95,7 @@ class Airborne(State):
         if p.control_lock > 0:
             p.control_lock -= dt
         else:
-            p.vel.x = intent.move_x * p.t.air_speed
+            p.vel.x = intent.move_x * p.air_speed
             _face(p, intent.move_x)
 
         # Press into a wall to stick to it - unless this jump is going to carry you
@@ -170,7 +170,7 @@ class Crouch(State):
         if not p.contacts.on_ground:
             return Airborne()
         # Crawl: a slide that ends under a low gap must not trap the player there.
-        p.vel.x = intent.move_x * p.t.crawl_speed
+        p.vel.x = intent.move_x * p.crawl_speed
         _face(p, intent.move_x)
         if (nxt := _grab_or_aim(p, intent)) is not None:
             return nxt
@@ -188,7 +188,7 @@ class Slide(State):
 
     def enter(self, p: Player) -> None:
         p.set_height(p.t.player_crouch_height)
-        p.vel.x = p.facing * p.t.slide_speed
+        p.vel.x = p.facing * p.slide_speed
         self.timer = p.t.slide_duration
 
     def update(self, p: Player, intent: Intent, dt: float) -> State | None:
@@ -199,7 +199,7 @@ class Slide(State):
         if intent.jump_pressed and p.can_stand():
             _jump(p, p.t.jump_speed)
             return Airborne()
-        if self.timer <= 0 or abs(p.vel.x) < p.t.run_speed * 0.3:
+        if self.timer <= 0 or abs(p.vel.x) < p.run_speed * 0.3:
             if intent.down_held or not p.can_stand():
                 return Crouch()
             return Grounded()

@@ -53,6 +53,9 @@ Each state's `update` runs before physics for the tick. It sets velocity and ret
 - Down becomes Slide if moving (and sliding is enabled), otherwise Crouch.
 - On entry: refills air jumps and clears `control_lock`.
 
+### Carrying the ball
+While holding the ball, run, slide and crawl speed are multiplied by `carry_speed_multiplier` (0.78: about 250 px/s instead of 320). Air speed and jumps are unchanged. A free defender wins a straight race on open ground, so the carrier escapes by using the level: jumps, climbs and the skill routes all still work with the ball.
+
 ### Airborne
 - Lands (becomes Grounded) when `on_ground` is true and `vel.y >= 0`.
 - Steering: `vel.x = move_x * air_speed` (320 px/s), unless `control_lock` is running.

@@ -1,4 +1,4 @@
-"""You can't re-cling to the wall you just left."""
+"""Ball carriers are slower on the ground; you can't re-cling to the wall you just left."""
 
 import pytest
 from conftest import make_game, run
@@ -6,6 +6,47 @@ from conftest import make_game, run
 from ballbrawlla.input import Intent
 
 R, L = 1, -1
+
+
+def give_ball(g, p):
+    g.ball.held_by, p.held_ball = p, g.ball
+
+
+# ---------------------------------------------------------------- carrying the ball
+
+def test_carrier_runs_and_slides_slower_but_jumps_the_same():
+    g = make_game(players=[(200, 650), (200, 600)], ball_gravity=0)
+    run(g, ticks=60)
+    free, carrier = g.players
+    give_ball(g, carrier)
+    m = g.t.carry_speed_multiplier
+    assert 0.75 <= m < 1.0                       # slower, not a snail
+    run(g, [Intent(move_x=R), Intent(move_x=R)], ticks=5)
+    assert free.vel.x == pytest.approx(g.t.run_speed)
+    assert carrier.vel.x == pytest.approx(g.t.run_speed * m)
+    assert carrier.slide_speed == pytest.approx(g.t.slide_speed * m)
+    assert carrier.crawl_speed == pytest.approx(g.t.crawl_speed * m)
+    assert carrier.air_speed == free.air_speed == g.t.air_speed   # jumping is how you escape
+
+
+def test_defender_wins_a_flat_race_against_the_carrier():
+    g = make_game(players=[(100, 650), (100, 600)], ball_gravity=0)
+    run(g, ticks=60)
+    defender, carrier = g.players
+    give_ball(g, carrier)
+    run(g, [Intent(move_x=R), Intent(move_x=R)], ticks=120)     # one second
+    gap = defender.center.x - carrier.center.x
+    assert gap == pytest.approx(g.t.run_speed * (1 - g.t.carry_speed_multiplier), rel=0.05)
+
+
+def test_without_the_ball_full_speed_returns():
+    g = make_game(players=[(200, 650)], ball_gravity=0)
+    run(g, ticks=60)
+    p = g.player
+    give_ball(g, p)
+    g.ball.held_by, p.held_ball = None, None
+    run(g, Intent(move_x=R), ticks=5)
+    assert p.vel.x == pytest.approx(g.t.run_speed)
 
 
 # ---------------------------------------------------------------- one cling per wall

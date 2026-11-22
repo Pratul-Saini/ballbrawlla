@@ -98,6 +98,7 @@ The Defender must spawn **at least 10 yards past the furthest point the QB could
 2. **10 seconds of free running.** The QB holds the ball.
 3. The QB **throws automatically** with the locked-in angle and power.
 4. **Either player can catch it** (Z within reach; catching is forgiving, see the README).
+   The player holding the ball runs, slides and crawls at 78% speed (jumps and air speed are unchanged), so the free player wins a straight race and the carrier has to use the level to escape.
 5. If the ball **stops moving** (it has come to rest and is slower than 8px/s), there are **3 seconds** to pick it up. Otherwise the play is dead. Picking it up within that window makes it live again.
 6. **WR has the ball:** the WR heads for the defense's end zone, and the Defender tries to tag the WR.
 7. **Defender has the ball (interception):** the Defender heads for the offense's end zone, and the WR tries to tag the Defender.

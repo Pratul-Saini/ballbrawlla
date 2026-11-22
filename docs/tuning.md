@@ -37,6 +37,7 @@ In network play the host's `Tuning` is sent to the joiner, so both sides use the
 | `slide_duration` | 0.45 | maximum slide time in seconds |
 | `slide_friction` | 2.5 | per-second decay of slide speed |
 | `crawl_speed` | 110 | walking speed while crouched (0 freezes the crouch, the old behavior) |
+| `carry_speed_multiplier` | 0.78 | scales run, slide and crawl speed while holding the ball (not air speed or jumps) |
 
 ## Wall cling
 | Field | Default | Meaning |
