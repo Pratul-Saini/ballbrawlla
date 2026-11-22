@@ -34,10 +34,14 @@ from ballbrawlla.rules.teams import Team
 from ballbrawlla.world.level import Level
 
 QB_REGION = (255, 220, 90)
+SPOT_OK = (120, 230, 140)      # play call: where the player would be placed
+SPOT_BAD = (240, 90, 90)       # play call: not on a platform in the zone
 BANNER = (255, 240, 180)
 DIM = (150, 155, 170)
 BUTTON = (60, 120, 80)
 BUTTON_EDGE = (150, 230, 170)
+BUTTON_OFF = (60, 62, 70)          # nothing to confirm yet (not on a platform)
+BUTTON_OFF_EDGE = (110, 114, 126)
 MINIMAP_H = 40
 HUD_H = MINIMAP_H + 54  # dark band behind the minimap and the two HUD text lines
 AIM_RING_RADIUS = 60
@@ -225,8 +229,9 @@ class MatchRenderer:
             else:
                 pygame.draw.rect(self.screen, PLATFORM, rect)
 
-    def _draw_figure(self, x: float, feet_y: float, team: int, label: str, outline_only=False, me=False):
-        w, h = self.t.player_width, self.t.player_height
+    def _draw_figure(self, x: float, feet_y: float, team: int, label: str, outline_only=False, me=False,
+                     h: float | None = None):
+        w, h = self.t.player_width, (h or self.t.player_height)
         rect = self._wrect(x - w / 2, feet_y - h, w, h)
         color = _team_color(team)
         if outline_only:
@@ -269,11 +274,30 @@ class MatchRenderer:
             self._band(*call["def_range"], _team_color(dfn, 30))
 
         qb = call["qb"]
-        self._draw_figure(qb[0], qb[1], off, "QB", outline_only=call["placing"] and me_off)
+        placing = call["placing"] and not call["off_locked"]
+        self._draw_figure(qb[0], qb[1], off, "QB", me=placing and me_off, h=call.get("qb_h"))
+        if placing:
+            self._draw_spot_marker(call["qb_ok"], qb, call.get("qb_h"))
         if "def" in call:
-            self._draw_figure(call["def"][0], call["def"][1], dfn, "DEF", outline_only=not call["def_locked"], me=True)
+            self._draw_figure(call["def"][0], call["def"][1], dfn, "DEF", outline_only=call["def_locked"], me=True,
+                              h=call.get("def_h"))
+            if not call["def_locked"]:
+                self._draw_spot_marker(call["def_ok"], call["def"], call.get("def_h"))
         if "aim" in call and not call["placing"]:
-            self._draw_aim(Vector2(qb[0], qb[1] - h / 2), *call["aim"])
+            self._draw_aim(Vector2(qb[0], qb[1] - (call.get("qb_h") or h) / 2), *call["aim"])
+
+    def _draw_spot_marker(self, ok: bool, feet, h: float | None) -> None:
+        """Green bar under the player if it's standing somewhere it can lock in;
+        otherwise a red box (jumping, clinging, or outside its zone)."""
+        w, h = self.t.player_width, (h or self.t.player_height)
+        if ok:
+            bar = self._wrect(feet[0] - w, feet[1] - 2, 2 * w, 4)
+            pygame.draw.rect(self.screen, SPOT_OK, bar)
+        else:
+            box = self._wrect(feet[0] - w / 2, feet[1] - h, w, h)
+            pygame.draw.rect(self.screen, SPOT_BAD, box.inflate(6, 6), 2)
+            self._text("not on a platform in your zone", (box.centerx, box.bottom + 4), SPOT_BAD, self.small,
+                       center=True)
 
     def _draw_actors(self, view: dict) -> None:
         z = self.camera.zoom
@@ -369,11 +393,12 @@ class MatchRenderer:
         self.button_rect = None
         label = self._button_label(view)
         if label:
+            enabled = not label.startswith("Move ")
             rect = pygame.Rect(0, 0, 240, 40)
-            rect.midbottom = (vw // 2, vh - 36)
-            pygame.draw.rect(self.screen, BUTTON, rect, border_radius=6)
-            pygame.draw.rect(self.screen, BUTTON_EDGE, rect, 2, border_radius=6)
-            self._text(label, (rect.centerx, rect.y + 12), TEXT, center=True)
+            rect.bottomright = (vw - 24, vh - 36)        # a corner, clear of players on the floor
+            pygame.draw.rect(self.screen, BUTTON if enabled else BUTTON_OFF, rect, border_radius=6)
+            pygame.draw.rect(self.screen, BUTTON_EDGE if enabled else BUTTON_OFF_EDGE, rect, 2, border_radius=6)
+            self._text(label, (rect.centerx, rect.y + 12), TEXT if enabled else DIM, center=True)
             self.button_rect = rect
 
         if self.debug:
@@ -386,8 +411,12 @@ class MatchRenderer:
         if view.get("local") or view["side"] == "offense":   # local: the mouse belongs to the offense
             if call["off_locked"]:
                 return None
-            return "Confirm QB spot" if call["placing"] else "Lock in throw"
-        return None if call["def_locked"] else "Lock in Defender"
+            if call["placing"]:
+                return "Confirm QB spot" if call["qb_ok"] else "Move QB onto a platform"
+            return "Lock in throw"
+        if call["def_locked"]:
+            return None
+        return "Lock in Defender" if call.get("def_ok", True) else "Move onto a platform"
 
     def _phase_hint(self, view: dict, side: str | None = None, head: bool = True) -> str:
         phase, timer = view["phase"], view.get("timer")
@@ -405,10 +434,9 @@ class MatchRenderer:
             if mine_locked:
                 return prefix + "Locked in - waiting for the other side"
             if side == "defense":
-                drag = "Move" if view.get("local") else "Drag"
-                return prefix + f"{drag} the Defender inside your zone - {grab} / button: lock in"
+                return prefix + f"Run the Defender to a platform in your zone - {grab} / button: lock in"
             if call["placing"]:
-                return prefix + f"Drag the QB (or move it) in the yellow zone - {grab} / button: confirm - {lock}: lock in"
+                return prefix + f"Run the QB to a platform in the yellow zone - {grab} / button: confirm - {lock}: lock in"
             back = f" - {grab} / click QB: move it" if call["picks"] else ""
             return prefix + f"Aim (mouse, right stick or keys) - {lock} / button: lock in" + back
         if phase == "pre_throw":

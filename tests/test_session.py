@@ -70,22 +70,31 @@ def test_network_match_waits_for_second_player():
     assert isinstance(s.down.qb_spawn, ChooseInRegion)
 
 
-def test_offense_drags_qb_but_it_stays_in_region_on_a_platform():
+def test_qb_is_run_into_place_and_only_confirms_standing_in_its_zone():
     s = make_session()
     c = s.call
     off = s.down.offense
-    far = s.field.x_at(off, 50)
-    step(s, off=Intent(mouse=(far, 100), mouse_pressed=True, mouse_held=True))
-    assert c.qb_spot.y == FLOOR
-    assert c.qb_spot.x == pytest.approx(s.field.x_at(off, s.t.qb_region_end_yards))
-    near = s.field.x_at(off, 4)
-    step(s, off=Intent(mouse=(near, 300), mouse_held=True))
-    assert c.qb_spot.x == pytest.approx(near)
-    step(s, off=Intent(mouse=(near, 300)))  # release
-    step(s, off=Intent(mouse=(far, 300), mouse_held=True))
-    assert c.qb_spot.x == pytest.approx(near)  # not dragging any more
-
-
+    fwd = off.attack_dir
+    step(s, off=Intent(jump_pressed=True, vertical=1))           # jump in place
+    step(s, off=Intent(vertical=1), ticks=5)
+    assert c.qb_player.state.name == "airborne" and not c.qb_ok
+    step(s, off=Intent(z_pressed=True, x_pressed=True, vertical=1))
+    assert c.placing and not c.offense_locked                    # can't confirm mid-air
+    step(s, ticks=60)                                             # land
+    assert c.qb_ok
+    step(s, off=Intent(move_x=fwd), ticks=30)                     # run past the 10-yard line
+    assert s.field.yards_from_goal(off, c.qb_player.center.x) > s.t.qb_region_end_yards
+    assert not c.qb_ok
+    step(s, off=Intent(z_pressed=True))
+    assert c.placing                                              # can't confirm outside the zone
+    step(s, off=Intent(move_x=-fwd), ticks=20)                    # back into the zone
+    assert c.qb_ok
+    step(s, off=Intent(z_pressed=True))
+    assert not c.placing                                          # confirmed where it stands
+    assert (c.qb_spot.x, c.qb_spot.y) == pytest.approx((c.qb_player.center.x, FLOOR))
+    x = c.qb_player.center.x
+    step(s, off=Intent(move_x=fwd), ticks=20)                     # now the arrows aim, the QB stays put
+    assert c.qb_player.center.x == pytest.approx(x)
 def test_confirm_then_aim_with_mouse_then_lock():
     s = make_session()
     c = s.call
@@ -108,13 +117,22 @@ def test_clicking_qb_while_aiming_goes_back_to_placing():
     assert c.placing
 
 
-def test_defender_cannot_be_placed_inside_its_forbidden_zone():
+def test_defender_is_run_into_place_and_cannot_lock_in_its_forbidden_zone():
     s = make_session()
     off = s.down.offense
-    step(s, dfn=Intent(mouse=(s.field.x_at(off, 5), 300), mouse_pressed=True, mouse_held=True))
-    assert s.field.yards_from_goal(off, s.call.def_spot.x) == pytest.approx(20)
-
-
+    c = s.call
+    toward_offense = -off.attack_dir
+    step(s, dfn=Intent(move_x=toward_offense), ticks=60)          # run inside the 20-yard line
+    assert s.field.yards_from_goal(off, c.def_player.center.x) < 20
+    assert not c.def_ok
+    step(s, dfn=Intent(z_pressed=True))
+    assert not c.defense_locked
+    step(s, dfn=Intent(move_x=-toward_offense), ticks=70)         # back out past the 20
+    assert c.def_ok
+    step(s, dfn=Intent(z_pressed=True))
+    assert c.defense_locked
+    assert s.field.yards_from_goal(off, c.def_spot.x) >= 20
+    assert c.def_spot.x == pytest.approx(c.def_player.center.x)
 def test_execution_starts_as_soon_as_both_lock():
     s = make_session()
     step(s, off=Intent(x_pressed=True))
@@ -135,7 +153,7 @@ def test_play_call_timeout_restarts_same_down_keeping_choices():
 
 def test_last_inputs_are_the_next_defaults():
     s = make_session()
-    step(s, off=Intent(move_x=-1), ticks=10)
+    step(s, off=Intent(move_x=-1), ticks=3)                    # nudge the QB, staying in its zone
     step(s, off=Intent(z_pressed=True))
     step(s, off=Intent(move_x=1), ticks=20)  # rotate aim
     angle = s.call.aim_angle
@@ -358,10 +376,29 @@ def test_views_hide_the_other_sides_secrets():
     s = make_session()
     off_pid, def_pid = s.human_of(s.down.offense), s.human_of(s.down.defense)
     ov, dv = make_view(s, off_pid), make_view(s, def_pid)
-    assert "aim" in ov["call"] and "def" not in ov["call"]
+    assert "aim" in ov["call"] and not {"def", "def_spot", "def_ok"} & set(ov["call"])
     assert "def" in dv["call"] and "aim" not in dv["call"]
     assert ov["call"]["qb"] == dv["call"]["qb"]  # QB placement is visible live to both
     lock_in(s)
     ov, dv = make_view(s, off_pid), make_view(s, def_pid)
     assert "aim" in ov and "aim" not in dv
     json.dumps(ov), json.dumps(dv)
+
+
+def test_qb_can_confirm_standing_on_a_platform_edge():
+    s = make_session(humans=1, platforms=[(140, FLOOR - 60, 30, 60)])   # a block inside the QB zone
+    c = s.call
+    p = c.qb_player
+    step(s, off=Intent(move_x=1, vertical=1, jump_pressed=True))
+    for _ in range(120):
+        step(s, off=Intent(move_x=1 if p.center.x < 150 else 0, vertical=1))
+    assert p.box.bottom == pytest.approx(FLOOR - 60)                    # on top of the block
+    for _ in range(60):                                                 # edge out until barely on it
+        if p.center.x >= 178:
+            break
+        step(s, off=Intent(move_x=1))
+    step(s, ticks=5)
+    assert p.contacts.on_ground and p.center.x > 170                     # center past the block's edge
+    assert c.qb_ok
+    step(s, off=Intent(z_pressed=True))
+    assert not c.placing and (c.qb_spot.x, c.qb_spot.y) == pytest.approx((170, FLOOR - 60))

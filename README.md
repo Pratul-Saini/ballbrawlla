@@ -36,7 +36,7 @@ spawn. The camera zooms out (down to 40%) to keep both players in view, and the 
 | Lock in, throw | G | / (slash) |
 | Controller | first one connected | second one connected |
 
-During the play call the **mouse belongs to whichever side is on offense** (drag the QB, aim, and
+During the play call the **mouse belongs to whichever side is on offense** (aiming the throw and
 the on-screen button). **F5** or a controller's **Options** starts a new match. R is not used here,
 because it sits next to Blue's keys. F1 toggles the debug overlay and Esc quits.
 
@@ -66,7 +66,7 @@ python -m ballbrawlla --join 192.168.x.y   # machine B
 
 | Input | Offense | Defense |
 |---|---|---|
-| Mouse drag / arrows | Move the QB (1st down only); it snaps to a platform in the yellow zone | Move the Defender inside your zone |
+| Arrows / stick (normal movement: run, jump, climb, slide) | Move the QB (1st down only); it can only be confirmed standing on a platform in the yellow zone | Move the Defender; it can only lock in standing on a platform in your zone |
 | Z / on-screen button | Confirm the QB spot | Lock in |
 | Hold mouse and point, or ←/→ and ↑/↓ | Aim: direction = angle, distance = power | |
 | X / on-screen button | Lock in the throw | Lock in |

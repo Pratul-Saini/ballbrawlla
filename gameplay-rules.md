@@ -84,8 +84,8 @@ The Defender must spawn **at least 10 yards past the furthest point the QB could
 
 | | Offense | Defense |
 |---|---|---|
-| **Place** (only when the down lets the offense pick) | Drag the QB with the mouse, or move it with the arrows. It snaps to the nearest platform top in the yellow zone. **Z / "Confirm QB spot"** confirms. | Drag the Defender, or move it with the arrows, inside your zone. **Z / "Lock in Defender"** locks in. |
-| **Aim** | Hold the mouse and point: the direction is the angle (full circle) and the distance is the power, up to 200px for max. Or use left/right for angle and up/down for power. **X / "Lock in throw"** locks in. Clicking the QB (or Z) goes back to placing. | |
+| **Place** (only when the down lets the offense pick) | Move the QB with the **same movement as in the play**: run, jump, double jump, climb, slide. It **can only be confirmed while standing on a platform** in the yellow zone (not mid-jump, not clinging to a wall); where it stands becomes its spawn (moved slightly inward if it's on a platform's edge). A green bar under it means it can confirm; a red outline means it can't. **Z / "Confirm QB spot"** confirms. | Move the Defender the same way. It **locks in only while standing on a platform** in your zone. **Z / "Lock in Defender"** locks in. |
+| **Aim** | Hold the mouse and point: the direction is the angle (full circle) and the distance is the power, up to 200px for max. Or use left/right for angle and up/down for power. **X / "Lock in throw"** locks in. Clicking the QB (or Z) goes back to moving it. | |
 
 - **Who sees what:** the QB placement is visible to both sides as it moves. The throw angle and power are **hidden from the defense**, and the Defender's spot is **hidden from the offense** until execution. Each player is only ever sent their own view, so the hidden data never reaches the other machine [`net/view.py`].
 - **Starting values:** the last values that team used. The very first time, the QB is mid-region, the aim is 45° toward the opponent at middle power, and the Defender is 5 yards past its boundary.

@@ -63,8 +63,12 @@ def make_view(s: Session, pid: int, local: bool = False) -> dict:
 
     if s.phase is Phase.PLAY_CALL:
         c = s.call
+        qf = c.feet(c.qb_player)
         call = {
-            "qb": [_r(c.qb_spot.x), _r(c.qb_spot.y)],
+            "qb": [_r(qf.x), _r(qf.y)],                          # where the QB is (feet)
+            "qb_h": c.qb_player.h,
+            "qb_spot": [_r(c.qb_spot.x), _r(c.qb_spot.y)],       # the spawn it would take
+            "qb_ok": c.qb_ok,                                    # standing on a platform in its zone
             "picks": d.offense_picks_spawn,
             "placing": c.placing,
             "qb_range": [_r(c.qb_lo), _r(c.qb_hi)],
@@ -76,7 +80,11 @@ def make_view(s: Session, pid: int, local: bool = False) -> dict:
         if local or side == "offense":
             call["aim"] = [_r(c.aim_angle), _r(c.aim_power)]
         if local or side == "defense":
-            call["def"] = [_r(c.def_spot.x), _r(c.def_spot.y)]
+            df = c.feet(c.def_player)
+            call["def"] = [_r(df.x), _r(df.y)]
+            call["def_h"] = c.def_player.h
+            call["def_spot"] = [_r(c.def_spot.x), _r(c.def_spot.y)]
+            call["def_ok"] = c.def_ok
         v["call"] = call
         v["timer"] = _r(c.timer)
 
