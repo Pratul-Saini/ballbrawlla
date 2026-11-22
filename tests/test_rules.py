@@ -156,8 +156,18 @@ def test_first_to_five_touchdowns_wins():
     assert m.winner is Team.LEFT and m.score[Team.LEFT] == 5
 
 
-def test_practice_keeps_left_on_offense():
+def test_practice_swaps_sides_after_a_touchdown():
     m = Match.start(T, practice=True)
-    assert m.down.offense is Team.LEFT
+    assert m.human is Team.LEFT and m.down.offense is Team.LEFT
     m.apply(PlayResult(Outcome.TOUCHDOWN))
-    assert m.down == possession_start(Team.LEFT, T)
+    assert m.human is Team.RIGHT and m.down.offense is Team.RIGHT      # now attacking the other end zone
+    m.apply(PlayResult(Outcome.TOUCHDOWN))
+    assert m.human is Team.LEFT and m.down.offense is Team.LEFT        # and back again
+
+
+def test_practice_keeps_the_ball_after_a_failed_play():
+    m = Match.start(T, practice=True)
+    m.apply(PlayResult(Outcome.TOUCHDOWN))                              # human is Red now
+    for _ in range(T.downs_per_possession + 1):
+        m.apply(PlayResult(Outcome.DEAD_BALL, SPOT))
+        assert m.down.offense is Team.RIGHT and m.human is Team.RIGHT

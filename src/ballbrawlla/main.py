@@ -1,7 +1,8 @@
 """Entry point: window + fixed-timestep loop. Physics runs at Tuning.physics_hz
 regardless of frame rate.
 
-    ballbrawlla                     practice: you on offense vs a defender that stands still
+    ballbrawlla                     open the menu
+    ballbrawlla --level field_01    practice: you on offense vs a defender that stands still
     ballbrawlla --host              host a 2-player LAN match (you are Blue)
     ballbrawlla --join 192.168.x.y  join a LAN match (you are Red)
     ballbrawlla --local             two players on one screen (Blue: WASD + F/G, Red: arrows + . and /)
@@ -10,32 +11,49 @@ regardless of frame rate.
 """
 
 import argparse
+import os
+import socket
 import sys
 from dataclasses import asdict
 from pathlib import Path
 
 import pygame
 
+from ballbrawlla import diag
 from ballbrawlla.config import TUNING, Tuning
 from ballbrawlla.game import Game
 from ballbrawlla.gamepad import Gamepads
 from ballbrawlla.input import BLUE_KEYS, RED_KEYS, KeyboardInput
+from ballbrawlla.launch import LaunchError, check_launch, read_level, resolve_level
+from ballbrawlla.menu import Launch, MenuState, run_menu
 from ballbrawlla.net.client import Client
+from ballbrawlla.net.discovery import Beacon
 from ballbrawlla.net.host import Host
 from ballbrawlla.net.protocol import DEFAULT_PORT, lan_ip
 from ballbrawlla.net.view import make_view
 from ballbrawlla.notes import SessionNotes
+from ballbrawlla.pause import LOCAL, PauseMenu
 from ballbrawlla.render.match_renderer import Camera, MatchRenderer
 from ballbrawlla.render.renderer import Renderer
 from ballbrawlla.rules.field import Field
 from ballbrawlla.session import Session
-from ballbrawlla.world.level import Level, level_from_dict, level_to_dict, load_level
+from ballbrawlla.world.level import Level, level_from_dict, level_to_dict
 
 LEVELS = Path(__file__).resolve().parents[2] / "levels"
 DEFAULT_LEVEL = LEVELS / "field_01.json"
 SANDBOX_LEVEL = LEVELS / "arena_01.json"
 WINDOW = (1280, 720)
 MAX_FRAME_TIME = 0.25  # avoid a spiral of death after a stall
+
+
+_app_quit = False
+
+
+def _quit_app() -> None:
+    """The window's close button (or Cmd-Q) was used inside a game: end the whole program, not just the game."""
+    global _app_quit
+    _app_quit = True
+    diag.log.info("window closed: quitting the app")
 
 
 def run(argv: list[str] | None = None) -> None:
@@ -46,26 +64,97 @@ def run(argv: list[str] | None = None) -> None:
     mode.add_argument("--join", metavar="ADDRESS", help="join a host at this IP address")
     mode.add_argument("--sandbox", action="store_true", help="free play, no rules")
     mode.add_argument("--local", action="store_true", help="two players on one screen")
+    mode.add_argument("--catch", action="store_true", help="catch practice: football rules, no defender")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     args = parser.parse_args(argv)
-    if args.level is not None and not args.level.exists():
-        named = LEVELS / f"{args.level.stem}.json"  # allow --level field_01
-        if named.exists():
-            args.level = named
+    if args.join:
+        mode = "join"
+    elif args.sandbox:
+        mode = "sandbox"
+    elif args.local:
+        mode = "local"
+    elif args.host:
+        mode = "host"
+    elif args.catch:
+        mode = "catch"
+    elif args.level is not None:
+        mode = "practice"
+    else:
+        mode = None                      # no flags at all: open the menu
 
+    log_path = diag.setup()
+    if log_path:
+        print(f"log: {log_path}", file=sys.stderr)
+    if os.environ.get("SDL_VIDEODRIVER", "").lower() in ("dummy", "offscreen"):
+        msg = ("SDL_VIDEODRIVER is set to '%s', so no window will appear. "
+               "Run `unset SDL_VIDEODRIVER SDL_AUDIODRIVER` and start again." % os.environ["SDL_VIDEODRIVER"])
+        diag.log.warning(msg)
+        print(f"ballbrawlla: WARNING: {msg}", file=sys.stderr)
+    # macOS: deliver the click that focuses the window (otherwise the first click is lost), and keep
+    # controller input flowing even when the window isn't the focused one.
+    os.environ.setdefault("SDL_MOUSE_FOCUS_CLICKTHROUGH", "1")
+    os.environ.setdefault("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1")
     pygame.init()
+    diag.describe_pygame()
     try:
-        if args.join:
-            run_client(args.join, args.port)
-        elif args.sandbox:
-            run_sandbox(load_level(args.level or SANDBOX_LEVEL))
-        elif args.local:
-            run_couch(load_level(args.level or DEFAULT_LEVEL))
-        else:
-            run_match(load_level(args.level or DEFAULT_LEVEL), host=args.host, port=args.port)
+        if mode is None:
+            run_launcher()
+            return
+        level = resolve_level(args.level) if args.level else (SANDBOX_LEVEL if mode == "sandbox" else DEFAULT_LEVEL)
+        try:
+            start(Launch(mode, level, args.port, args.join or ""))
+        except (LaunchError, ConnectionError) as e:
+            diag.log.warning("launch refused: %s", e)
+            print(f"ballbrawlla: {e}", file=sys.stderr)
+            raise SystemExit(2) from None
+    except SystemExit:
+        raise
+    except BaseException:
+        diag.log.exception("run() failed")
+        raise
     finally:
+        diag.log.info("exit")
         pygame.quit()
 
+
+def start(choice: Launch) -> None:
+    """Check that the launch can work, then run it. Raises LaunchError or ConnectionError with a readable message."""
+    diag.log.info("launch requested: %s", choice)
+    why = check_launch(choice.mode, choice.level, choice.port, choice.address)
+    if why:
+        diag.log.warning("launch refused: %s", why)
+        raise LaunchError(why)
+    diag.where(choice.mode)
+    if choice.mode == "join":
+        run_client(choice.address, choice.port)
+        return
+    level = read_level(choice.level)
+    if choice.mode == "sandbox":
+        run_sandbox(level)
+    elif choice.mode == "local":
+        run_couch(level)
+    else:
+        run_match(level, host=choice.mode == "host", port=choice.port, defender=choice.mode != "catch")
+
+
+def run_launcher() -> None:
+    """Menu -> game -> menu, until the player quits from the menu."""
+    state = MenuState()
+    pads = Gamepads()
+    while True:
+        screen = _open_window("Gridiron Scramble", WINDOW)
+        choice = run_menu(screen, state, pads.names, pads)
+        if choice is None:
+            return
+        try:
+            start(choice)
+        except (LaunchError, ConnectionError, OSError) as e:
+            diag.log.warning("launch failed, back to menu: %s", e)
+            state.error = str(e)
+        diag.where("menu")
+        if _app_quit:
+            return
+        
 
 def _match_context(view_fn) -> str:
     """One line describing the match, for the notes header."""
@@ -89,16 +178,29 @@ def _pad_status(inputs: KeyboardInput) -> str:
 
 
 def _open_window(title: str, size: tuple[int, int] = WINDOW) -> pygame.Surface:
-    screen = pygame.display.set_mode(size, pygame.SCALED | pygame.RESIZABLE)
+    screen = pygame.display.set_mode(size, pygame.SCALED | pygame.RESIZABLE, display=_display_index())
     pygame.display.set_caption(title)
+    diag.describe_window(title, "SCALED|RESIZABLE")
     return screen
 
 
-def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT) -> None:
-    """Practice (1 human) or the hosting player (who also runs the simulation)."""
-    session = Session(level, TUNING, humans=2 if host else 1)
+def _display_index() -> int:
+    """Which monitor to open on: the main one (0) unless BALLBRAWLLA_DISPLAY says otherwise.
+    Without this, macOS can put the window on a second monitor that you aren't looking at."""
+    try:
+        wanted = int(os.environ.get("BALLBRAWLLA_DISPLAY", "0"))
+    except ValueError:
+        wanted = 0
+    count = len(pygame.display.get_desktop_sizes())
+    return wanted if 0 <= wanted < count else 0
+
+
+def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT, defender: bool = True) -> None:
+    """Practice (1 human, optionally with no defender) or the hosting player (who also runs the simulation)."""
+    session = Session(level, TUNING, humans=2 if host else 1, defender=defender)
 
     server: Host | None = None
+    beacon: Beacon | None = None
     address = ""
     if host:
         server = Host(
@@ -107,6 +209,7 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT) -> Non
             port=port,
         )
         address = f"{lan_ip()}:{server.port}"
+        beacon = Beacon(f"{socket.gethostname().split('.')[0]}'s game", level.name, server.port)
         print(f"Hosting on {address} - the other player joins with: ballbrawlla --join {lan_ip()}")
 
     screen = _open_window("ballbrawlla (host, Blue)" if host else "ballbrawlla (practice)")
@@ -115,6 +218,7 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT) -> Non
     notes = SessionNotes("host" if host else "practice", _level_label(level),
                          context=lambda: _match_context(lambda: make_view(session, 0)))
     clock = pygame.time.Clock()
+    pause = PauseMenu(pauses=not host)
     dt = TUNING.dt
     accumulator = 0.0
 
@@ -122,17 +226,20 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT) -> Non
         running = True
         while running:
             frame_dt = min(clock.tick(240) / 1000.0, MAX_FRAME_TIME)
+            diag.beat()
             accumulator += frame_dt
 
             for event in pygame.event.get():
+                diag.event(event)
                 if notes.handle(event):
+                    continue
+                if pause.handle(event, screen.get_size()):
                     continue
                 if event.type == pygame.QUIT:
                     running = False
+                    _quit_app()
                 elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        running = False
-                    elif event.key == pygame.K_r:
+                    if event.key == pygame.K_r:
                         session.new_match()
                     elif event.key == pygame.K_F1:
                         renderer.debug = not renderer.debug
@@ -145,6 +252,8 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT) -> Non
                     renderer.debug = not renderer.debug
 
             if server:
+                if beacon:
+                    beacon.tick(open_seat=len(server.clients) < server.max_players - 1)
                 joined, left = server.poll()
                 for pid in joined:
                     session.set_connected(pid, True)
@@ -154,6 +263,10 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT) -> Non
             stepped = False
             if notes.is_open and not server:
                 accumulator = 0.0                 # practice pauses while you write notes
+            if pause.result:
+                running = False
+            if pause.freezes:
+                accumulator = 0.0
             while accumulator >= dt:
                 intents = [notes.gate(inputs.consume(renderer.camera.pos))]
                 if server:
@@ -167,13 +280,16 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT) -> Non
                     server.send_to(pid, make_view(session, pid))
 
             status = f"hosting on {address}" if server else ""
-            controls = ("R / Options: restart   F1: debug   F2: notes   F3: hide controls   Esc: quit"
+            controls = ("R / Options: restart   F1: debug   F2: notes   F3: hide controls   Esc: menu"
                         + _pad_status(inputs))
             renderer.draw(make_view(session, 0), clock.get_fps(), frame_dt, status, controls)
+            pause.draw(screen)
             notes.draw(screen)
             pygame.display.flip()
     finally:
         notes.save()
+        if beacon:
+            beacon.close()
         if server:
             server.close()
 
@@ -197,23 +313,27 @@ def run_couch(level: Level) -> None:
     notes = SessionNotes("local", _level_label(level),
                          context=lambda: _match_context(lambda: make_view(session, 0, local=True)))
     clock = pygame.time.Clock()
+    pause = PauseMenu(controls=LOCAL)
     dt = TUNING.dt
     accumulator = 0.0
 
     running = True
     while running:
         frame_dt = min(clock.tick(240) / 1000.0, MAX_FRAME_TIME)
+        diag.beat()
         accumulator += frame_dt
 
         for event in pygame.event.get():
+            diag.event(event)
             if notes.handle(event):
+                continue
+            if pause.handle(event, screen.get_size()):
                 continue
             if event.type == pygame.QUIT:
                 running = False
+                _quit_app()
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    running = False
-                elif event.key == pygame.K_F5:
+                if event.key == pygame.K_F5:
                     session.new_match()
                 elif event.key == pygame.K_F1:
                     renderer.debug = not renderer.debug
@@ -229,6 +349,10 @@ def run_couch(level: Level) -> None:
 
         if notes.is_open:
             accumulator = 0.0                     # local play pauses while you write notes
+        if pause.result:
+            running = False
+        if pause.freezes:
+            accumulator = 0.0
         while accumulator >= dt:
             offense = session.human_of(session.down.offense)
             cam = renderer.camera
@@ -240,8 +364,9 @@ def run_couch(level: Level) -> None:
         names = pads.names
         controls = (f"Blue: {BLUE_KEYS.label}   Red: {RED_KEYS.label}   |   "
                     + (f"controllers: {', '.join(names)}   |   " if names else "")
-                    + "F5: new match   F1: debug   F2: notes   F3: hide controls   Esc: quit")
+                    + "F5: new match   F1: debug   F2: notes   F3: hide controls   Esc: menu")
         renderer.draw(make_view(session, 0, local=True), clock.get_fps(), frame_dt, "", controls)
+        pause.draw(screen)
         notes.draw(screen)
         pygame.display.flip()
     notes.save()
@@ -253,8 +378,7 @@ def run_client(address: str, port: int = DEFAULT_PORT) -> None:
     try:
         client = Client(address, port)
     except ConnectionError as e:
-        print(f"Could not join: {e}", file=sys.stderr)
-        return
+        raise ConnectionError(f"Could not join {address}:{port}. {e}") from e
 
     level = level_from_dict(client.level_data)
     tuning = Tuning(**client.tuning_data)
@@ -262,6 +386,7 @@ def run_client(address: str, port: int = DEFAULT_PORT) -> None:
     renderer = MatchRenderer(screen, level, Field(level, tuning), tuning)
     inputs = KeyboardInput()
     clock = pygame.time.Clock()
+    pause = PauseMenu(pauses=False)
     dt = tuning.dt
     accumulator = 0.0
     view: dict | None = None
@@ -271,17 +396,20 @@ def run_client(address: str, port: int = DEFAULT_PORT) -> None:
         running = True
         while running:
             frame_dt = min(clock.tick(240) / 1000.0, MAX_FRAME_TIME)
+            diag.beat()
             accumulator += frame_dt
 
             for event in pygame.event.get():
+                diag.event(event)
                 if notes.handle(event):
+                    continue
+                if pause.handle(event, screen.get_size()):
                     continue
                 if event.type == pygame.QUIT:
                     running = False
+                    _quit_app()
                 elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        running = False
-                    elif event.key == pygame.K_F1:
+                    if event.key == pygame.K_F1:
                         renderer.debug = not renderer.debug
                     elif event.key == pygame.K_F3:
                         renderer.show_controls = not renderer.show_controls
@@ -289,6 +417,10 @@ def run_client(address: str, port: int = DEFAULT_PORT) -> None:
                     renderer.debug = not renderer.debug
 
             # Send input at the simulation rate so press edges line up with host ticks.
+            if pause.result:
+                running = False
+            if pause.freezes:
+                accumulator = 0.0
             while accumulator >= dt:
                 client.send_intent(notes.gate(inputs.consume(renderer.camera.pos)))
                 accumulator -= dt
@@ -300,9 +432,10 @@ def run_client(address: str, port: int = DEFAULT_PORT) -> None:
             status = f"connected to {address}:{port}"
             if client.closed:
                 status = "disconnected from host - press Esc to quit"
-            controls = "F1: debug   F2: notes   F3: hide controls   Esc: quit" + _pad_status(inputs)
+            controls = "F1: debug   F2: notes   F3: hide controls   Esc: menu" + _pad_status(inputs)
             if view is not None:
                 renderer.draw(view, clock.get_fps(), frame_dt, status, controls)
+            pause.draw(screen)
             notes.draw(screen)
             pygame.display.flip()
     finally:
@@ -325,21 +458,25 @@ def run_sandbox(level: Level) -> None:
     inputs = KeyboardInput()
     notes = SessionNotes("sandbox", _level_label(level))
     clock = pygame.time.Clock()
+    pause = PauseMenu()
     dt = TUNING.dt
     accumulator = 0.0
     running = True
     while running:
         frame_dt = min(clock.tick(240) / 1000.0, MAX_FRAME_TIME)
+        diag.beat()
         accumulator += frame_dt
         for event in pygame.event.get():
+            diag.event(event)
             if notes.handle(event):
+                continue
+            if pause.handle(event, screen.get_size()):
                 continue
             if event.type == pygame.QUIT:
                 running = False
+                _quit_app()
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    running = False
-                elif event.key == pygame.K_r:
+                if event.key == pygame.K_r:
                     game.reset()
                 elif event.key == pygame.K_F1:
                     renderer.debug = not renderer.debug
@@ -352,11 +489,16 @@ def run_sandbox(level: Level) -> None:
                 renderer.debug = not renderer.debug
         if notes.is_open:
             accumulator = 0.0                     # the sandbox pauses while you write notes
+        if pause.result:
+            running = False
+        if pause.freezes:
+            accumulator = 0.0
         while accumulator >= dt:
             game.step([inputs.consume()], dt)
             accumulator -= dt
         camera.follow(game.player.center, level, frame_dt)
         renderer.draw(game, clock.get_fps(), camera=camera.pos)
+        pause.draw(screen)
         notes.draw(screen)
         pygame.display.flip()
     notes.save()
