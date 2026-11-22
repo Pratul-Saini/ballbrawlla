@@ -55,7 +55,7 @@ def _face(p: Player, move_x: int) -> None:
 
 def _grab_or_aim(p: Player, intent: Intent) -> State | None:
     """Z on the ground while holding the ball: aim. Pickups are handled in Player.update."""
-    if intent.z_pressed and p.held_ball is not None and p.t.throw_enabled:
+    if intent.z_pressed and p.held_ball is not None and p.t.throw_enabled and p.can_throw:
         return Aiming()
     return None
 

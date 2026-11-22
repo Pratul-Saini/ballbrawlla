@@ -62,6 +62,29 @@ class Tuning:
     power_max: float = 1400
     power_rate: float = 900           # power units per second (up/down)
 
+    # --- Field (see gameplay-rules.md) ---
+    yard_px: float = 24               # 1 yard in pixels (player is ~2 yd tall)
+    field_yards: float = 100          # goal line to goal line
+    end_zone_yards: float = 10        # each end zone
+
+    # --- Downs and play call ---
+    downs_per_possession: int = 4
+    touchdowns_to_win: int = 5
+    play_call_seconds: float = 15     # restarts (same down) if both sides haven't locked in
+    qb_region_start_yards: float = 0  # 1st-down QB spawn region, yards from offense's goal line
+    qb_region_end_yards: float = 10
+    defender_gap_yards: float = 10    # defender spawns >= this far past the QB's furthest spot
+    cursor_speed: float = 900         # px/s, arrow-key spawn cursor during the play call
+    qb_grab_radius: float = 40        # px, mouse click this close to the QB starts a drag
+    aim_drag_radius: float = 200      # px, mouse distance from the QB that maps to max power
+
+    # --- Play execution ---
+    pre_throw_seconds: float = 10     # free running before the QB throws automatically
+    ball_stopped_speed: float = 8     # px/s; a resting ball slower than this has "landed"
+    loose_ball_seconds: float = 3     # after landing, play is dead if nobody picks it up
+    tag_radius: float = 40            # px, center to center
+    result_pause_seconds: float = 2.5  # shows the play result before the next play call
+
     @property
     def dt(self) -> float:
         return 1.0 / self.physics_hz

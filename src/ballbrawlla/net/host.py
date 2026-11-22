@@ -1,5 +1,5 @@
 """Host side: accepts clients, turns their input messages into Intents, and
-broadcasts snapshots. The host's own player is slot 0; clients get 1..N-1.
+sends each client its view. The host's own player is slot 0; clients get 1..N-1.
 
 Everything is non-blocking and driven from the game loop (no threads)."""
 
@@ -17,6 +17,9 @@ class RemoteInput:
         self.move_x = 0
         self.vertical = 0
         self.jump = self.z = self.x = False
+        self.mouse: tuple[float, float] | None = None
+        self.mouse_held = False
+        self.mouse_pressed = self.button = False
 
     def feed(self, msg: dict) -> None:
         self.move_x = max(-1, min(1, int(msg.get("mx", 0))))
@@ -24,10 +27,22 @@ class RemoteInput:
         self.jump |= bool(msg.get("j"))
         self.z |= bool(msg.get("z"))
         self.x |= bool(msg.get("x"))
+        m = msg.get("m")
+        self.mouse = (float(m[0]), float(m[1])) if isinstance(m, list) and len(m) == 2 else None
+        self.mouse_held = bool(msg.get("mh"))
+        self.mouse_pressed |= bool(msg.get("mp"))
+        self.button |= bool(msg.get("b"))
 
     def consume(self) -> Intent:
-        intent = Intent(self.move_x, self.vertical, self.jump, self.z, self.x)
+        intent = Intent(
+            self.move_x, self.vertical, self.jump, self.z, self.x,
+            mouse=self.mouse,
+            mouse_held=self.mouse_held,
+            mouse_pressed=self.mouse_pressed,
+            button_pressed=self.button,
+        )
         self.jump = self.z = self.x = False
+        self.mouse_pressed = self.button = False
         return intent
 
 
@@ -97,6 +112,11 @@ class Host:
     def intent_for(self, pid: int) -> Intent:
         remote = self._inputs.get(pid)
         return remote.consume() if remote else Intent()
+
+    def send_to(self, pid: int, msg: dict) -> None:
+        conn = self.clients.get(pid)
+        if conn is not None:
+            conn.send(msg)
 
     def broadcast(self, msg: dict) -> None:
         for conn in self.clients.values():

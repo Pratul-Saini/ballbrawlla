@@ -5,10 +5,11 @@ a LAN its latency is a few ms. JSON keeps messages easy to inspect.
 
 Messages
   client -> host  {"t": "hello", "v": PROTOCOL_VERSION}
-                  {"t": "in", "mx": -1|0|1, "v": -1|0|1, "j": 0|1, "z": 0|1, "x": 0|1}
+                  {"t": "in", "mx": -1|0|1, "v": -1|0|1, "j": 0|1, "z": 0|1, "x": 0|1,
+                   "m": [x, y] | null (world coords), "mh": 0|1, "mp": 0|1, "b": 0|1}
   host -> client  {"t": "welcome", "id": pid, "level": {...}, "tuning": {...}}
                   {"t": "reject", "reason": str}
-                  {"t": "snap", ...}   see net/snapshot.py
+                  {"t": "snap", ...}   this client's view, see net/view.py
 """
 
 import json
@@ -16,7 +17,7 @@ import socket
 
 from ballbrawlla.input import Intent
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 DEFAULT_PORT = 50555
 MAX_OUTBOX = 1 << 20  # drop a peer that stops reading rather than buffer forever
 
@@ -92,6 +93,10 @@ def intent_to_msg(intent: Intent) -> dict:
         "j": int(intent.jump_pressed),
         "z": int(intent.z_pressed),
         "x": int(intent.x_pressed),
+        "m": None if intent.mouse is None else [round(intent.mouse[0], 1), round(intent.mouse[1], 1)],
+        "mh": int(intent.mouse_held),
+        "mp": int(intent.mouse_pressed),
+        "b": int(intent.button_pressed),
     }
 
 

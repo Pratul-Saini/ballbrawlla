@@ -1,6 +1,10 @@
 # ballbrawlla
 
-Prototype of a 2D ball-throwing platformer. See [prototype-design.md](prototype-design.md) for requirements.
+Prototype of a 2D ball-throwing platformer: a 2-player football match played across platforms.
+
+- [prototype-design.md](prototype-design.md): movement, world and physics requirements
+- [further-gameplay-features.md](further-gameplay-features.md): teams, roles, downs, play call
+- [gameplay-rules.md](gameplay-rules.md): **the rules as built**, including edge cases
 
 ## Run
 
@@ -8,8 +12,9 @@ Prototype of a 2D ball-throwing platformer. See [prototype-design.md](prototype-
 python -m venv .venv
 .venv\Scripts\activate          # Windows (source .venv/bin/activate elsewhere)
 pip install -e .[dev]
-python -m ballbrawlla           # or: ballbrawlla --level levels/arena_01.json
-pytest                          # physics, player, multiplayer and network tests
+python -m ballbrawlla           # practice: you on offense vs a defender that stands still
+python -m ballbrawlla --sandbox # free play in the small arena, no rules (movement tuning)
+pytest                          # physics, player, rules, match and network tests
 ```
 
 ## Local network play (2 players)
@@ -21,9 +26,12 @@ python -m ballbrawlla --host               # machine A: prints "Hosting on 192.1
 python -m ballbrawlla --join 192.168.x.y   # machine B
 ```
 
-- The host is P1 (blue) and runs the only simulation. The client sends its key input and
-  draws the snapshots the host sends back. The level and tuning come from the host, so the
-  client's `config.py` and `levels/` don't matter.
+- The host is **Blue** and runs the only simulation; the joining player is **Red**. A coin flip
+  picks who starts on offense. The match starts once both are connected.
+- The client sends its input and draws the view the host sends back. Each player is sent only
+  what they're allowed to see (the defense never receives the throw aim, and the offense never
+  receives the Defender's spawn during the play call).
+- The level and tuning come from the host, so the client's `config.py` and `levels/` don't matter.
 - Players pass through each other. If both press Z on the same tick, the one closer to the ball gets it.
 - Windows Firewall will ask to allow Python the first time you host. Allow it on private networks.
 - Use `--port N` on both sides to change the port (default 50555). R (reset) works on the host only.
@@ -31,14 +39,26 @@ python -m ballbrawlla --join 192.168.x.y   # machine B
 
 ## Controls
 
+**Play call** (15s; see [gameplay-rules.md](gameplay-rules.md)):
+
+| Input | Offense | Defense |
+|---|---|---|
+| Mouse drag / arrows | Move the QB (1st down only); it snaps to a platform in the yellow zone | Move the Defender inside your zone |
+| Z / on-screen button | Confirm the QB spot | Lock in |
+| Hold mouse and point, or ←/→ and ↑/↓ | Aim: direction = angle, distance = power | |
+| X / on-screen button | Lock in the throw | Lock in |
+
+**Execution** (you are the WR on offense, the Defender on defense):
+
 | Key | Action |
 |---|---|
-| ← / → | Run (fixed speed). While aiming: rotate aim (full circle) |
-| ↑ | Jump / double jump / hop up a wall. While aiming: more power |
-| ↓ | Crouch (standing) / slide (running). While aiming: less power |
-| Z | Pick up ball when near · enter aim when holding (on ground) · cancel aim |
-| X | Throw (while aiming) |
-| R / F1 / Esc | Reset (single player / host only) · toggle debug overlay · quit |
+| ← / → | Run (fixed speed) |
+| ↑ | Jump / double jump / hop up a wall |
+| ↓ | Crouch (standing) / slide (running) |
+| Z | Catch / pick up the ball · tag the opponent carrying the ball |
+| R / F1 / Esc | New match (practice / host only) · debug overlay · quit |
+
+In `--sandbox` mode the original controls apply: Z with the ball enters aim, X throws.
 
 Catching is forgiving: pressing Z shortly before the ball arrives, or shortly after it passes, still catches it.
 
@@ -49,10 +69,17 @@ press away to wall-jump, press ↑ to climb.
 
 ```
 src/ballbrawlla/
-  config.py            Tuning: every gameplay number (speeds, gravity, restitution, aim...)
-  input.py             Keyboard -> Intent (the sim only ever sees Intents)
-  game.py              Game: owns level/players/ball, step(intents, dt), pickup resolution. No rendering.
-  main.py              Window + fixed-timestep loop (physics at 120 Hz); single player / --host / --join
+  config.py            Tuning: every gameplay number (movement, ball, field, downs, timers)
+  input.py             Keyboard + mouse -> Intent (the sim only ever sees Intents)
+  game.py              Game: physics world (players, ball, pickups), step(intents, dt). No rules.
+  session.py           Session: a match in progress - phases of each down, driving Game for the WR/Defender
+  main.py              Window + fixed-timestep loop (120 Hz); practice / --host / --join / --sandbox
+  rules/               Pure rules, no pygame (see gameplay-rules.md)
+    teams.py           Team (LEFT/Blue, RIGHT/Red), Role (QB, WR, DEF)
+    field.py           Yards <-> px, goal lines, end zones, valid spawn spots on platform tops
+    down.py            Down, SpawnRule (ChooseInRegion | FixedSpot), spawn ranges, PlayResult, next_down
+    play_call.py       PlayCall: QB drag/confirm, aim, Defender placement, locks, timeout restart
+    match.py           Match: score, coin flip, first to 5
   physics/
     body.py            Body: pos, vel, acc, gravity; semi-implicit Euler
     shapes.py          AABB (player, platforms), Circle
@@ -65,13 +92,15 @@ src/ballbrawlla/
     ball.py            Ball: gravity, sub-stepped collision, restitution, held_by
   net/
     protocol.py        Non-blocking newline-JSON TCP connection, message formats
-    host.py            Accepts clients, turns their messages into Intents, broadcasts snapshots
-    client.py          Connects, sends Intents, receives the latest snapshot
-    snapshot.py        Game state <-> snapshot dict
+    host.py            Accepts clients, turns their messages into Intents, sends each its view
+    client.py          Connects, sends Intents, receives the latest view
+    view.py            Session -> one human's view (hidden info left out)
   render/
-    renderer.py        Primitive drawing (players colored per slot), aim ring + arc, debug overlay
-levels/arena_01.json   Platforms as {x, y, w, h[, type]}; player_spawns / ball_spawn are centers. Bounds are implicit.
-tests/                 Collision, player, multiplayer and loopback network tests
+    match_renderer.py  Draws a match from a view: camera, field markings, play call, HUD, minimap
+    renderer.py        Sandbox drawing of a raw Game
+levels/field_01.json   The match field (100 yd + end zones at 24 px/yd), generated by tools/gen_field_01.py
+levels/arena_01.json   Small sandbox arena. Platforms are {x, y, w, h[, type]}; bounds are implicit.
+tests/                 Collision, player, catching, platforms, rules, match session and network tests
 ```
 
 ### Model
@@ -89,8 +118,11 @@ tests/                 Collision, player, multiplayer and loopback network tests
   platform is not supported.
 - **Player**: a state machine. Each state sets velocity from the Intent, scales or caps gravity
   (wall friction), and returns the next state.
+- **Rules**: `Session` runs each down as play call -> execution. Downs differ only in how the QB
+  spawn is decided (`ChooseInRegion` on a fresh possession, `FixedSpot` otherwise); see
+  [gameplay-rules.md](gameplay-rules.md).
 - **Network**: the host is the authority. Clients send Intents at 120 Hz; the host steps
-  `Game` with every player's Intent and broadcasts a snapshot each frame. There is no
+  the `Session` with every player's Intent and sends each player their own view every frame. There is no
   client-side prediction, which is fine on a LAN (a few ms round trip).
 
 - **Catching**: three values in `config.py` set how forgiving a catch is.
