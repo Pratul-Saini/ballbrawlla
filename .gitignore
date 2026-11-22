@@ -5,3 +5,7 @@ __pycache__/
 logs/
 build/
 dist/
+# music files are big; the build bundles them from your disk (see docs/packaging.md)
+assets/music/*.mp3
+assets/music/*.ogg
+assets/music/*.wav

@@ -1,3 +1,7 @@
+import os
+
+os.environ.setdefault("BALLBRAWLLA_MUSIC", "off")   # tests must never play (or load) the real song
+
 import pytest
 
 from ballbrawlla.config import Tuning

@@ -16,6 +16,7 @@ import pygame
 
 from ballbrawlla import diag
 from ballbrawlla.menu_anim import Backdrop
+from ballbrawlla.music import music
 from ballbrawlla.launch import (
     MODE_LABELS, LevelInfo, check_launch, check_level, check_port, list_levels,
 )
@@ -351,7 +352,7 @@ def draw(surface: pygame.Surface, state: MenuState, fonts: dict[str, pygame.font
         text(small, "Nothing showing up? You and the host must be on the same Wi-Fi, "
                     "and your firewall must allow this game.", DIM, midbottom=(w // 2, h - 50))
     text(small, f"v{__version__}", DIM, bottomright=(w - 14, h - 10))
-    text(small, "Up/Down: move   Enter / click / Cross: select   Esc / Circle: back", DIM, midbottom=(w // 2, h - 20))
+    text(small, "Up/Down: move   Enter / click / Cross: select   Esc / Circle: back   M: music", DIM, midbottom=(w // 2, h - 20))
 
     if state.error:
         box = pygame.Rect(0, 0, 760, 170)
@@ -443,8 +444,11 @@ def run_menu(screen: pygame.Surface, state: MenuState | None = None, pad_names: 
     try:
         while not state.quit and state.result is None:
             diag.beat()
+            music.update()
             for event in pygame.event.get():
                 diag.event(event)
+                if not state.editing and music.handle_event(event):      # M mutes, except while typing an address
+                    continue
                 if pads is not None:
                     pads.handle_event(event)         # keeps pads plugged in later working
                 handle_event(state, event, rects)

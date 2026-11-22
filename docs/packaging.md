@@ -44,6 +44,17 @@ order. They are scaled to the ball size and replace the drawn football. A file t
 files the menu draws its own ball. The build bundles `assets/` when it exists. If the art is not yours to share, keep it
 out of git (add `assets/` to `.gitignore`); the build still bundles it from your disk.
 
+## Music
+
+Every `.mp3`, `.ogg` or `.wav` in `assets/music/` plays in name order, then starts over; one file just loops. No files
+means no music and no error. Name files `01_...`, `02_...` to choose the order. M mutes. The music is quieter during a
+game than in the menus. Files that can't be read are skipped, and with no audio device the game stays silent.
+
+Audio files are git-ignored (`assets/music/*.mp3|ogg|wav`), because they are big and GitHub refuses files over 100 MB.
+The build still bundles whatever is in the folder on your disk, so a zip you send carries your music. To put music in
+the repository itself, remove those lines from `.gitignore` first and keep the files small. `BALLBRAWLLA_MUSIC=off`
+turns the music off completely.
+
 ## What each mode needs
 
 | Mode | Notes |
