@@ -40,6 +40,8 @@ python -m ballbrawlla --join 192.168.x.y   # machine B
 | X | Throw (while aiming) |
 | R / F1 / Esc | Reset (single player / host only) · toggle debug overlay · quit |
 
+Catching is forgiving: pressing Z shortly before the ball arrives, or shortly after it passes, still catches it.
+
 Wall cling: jump into a wall while holding toward it. With no input you slide slowly down;
 press away to wall-jump, press ↑ to climb.
 
@@ -68,7 +70,7 @@ src/ballbrawlla/
     snapshot.py        Game state <-> snapshot dict
   render/
     renderer.py        Primitive drawing (players colored per slot), aim ring + arc, debug overlay
-levels/arena_01.json   Platforms as {x, y, w, h}; player_spawns / ball_spawn are centers. Bounds are implicit.
+levels/arena_01.json   Platforms as {x, y, w, h[, type]}; player_spawns / ball_spawn are centers. Bounds are implicit.
 tests/                 Collision, player, multiplayer and loopback network tests
 ```
 
@@ -80,10 +82,23 @@ tests/                 Collision, player, multiplayer and loopback network tests
   and comes to rest when an impact is slower than `ball_rest_speed`.
 - **World**: a rectangle with boundary walls generated automatically, plus any number of
   rectangular platforms (horizontal or vertical, floating or connected).
+- **Platform types**: a platform entry accepts an optional `type` of `"thin"` or `"solid"`.
+  An entry without `type` is solid. Any other value raises a `ValueError`. Players and the ball
+  land on a thin platform only when moving downward from at or above its top edge. They pass through
+  it moving upward or sideways. Solid platforms block from all sides. Dropping down through a thin
+  platform is not supported.
 - **Player**: a state machine. Each state sets velocity from the Intent, scales or caps gravity
   (wall friction), and returns the next state.
 - **Network**: the host is the authority. Clients send Intents at 120 Hz; the host steps
   `Game` with every player's Intent and broadcasts a snapshot each frame. There is no
   client-side prediction, which is fine on a LAN (a few ms round trip).
+
+- **Catching**: three values in `config.py` set how forgiving a catch is.
+  - `pickup_radius` (55 px): player-center to ball-center distance that counts as in reach.
+  - `pickup_buffer_time` (0.1 s): a Z press stays armed this long, waiting for the ball.
+  - `pickup_grace_time` (0.1 s): a Z press still counts this long after the ball left reach.
+
+  The host judges the late-press grace against the ball's recent positions, so it applies
+  equally to the host's local player and to joining players.
 
 Tune game feel in `config.py`. Change the arena in `levels/*.json`.
