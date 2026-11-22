@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 class State:
     name = "state"
     wants_full_height = True  # player stands back up when possible
+    allows_pickup = True  # False: Z means something else in this state
 
     def enter(self, p: Player) -> None:
         pass
@@ -53,12 +54,9 @@ def _face(p: Player, move_x: int) -> None:
 
 
 def _grab_or_aim(p: Player, intent: Intent) -> State | None:
-    """Z on the ground: aim if holding the ball, otherwise try to pick it up."""
-    if not intent.z_pressed:
-        return None
-    if p.held_ball is not None:
-        return Aiming() if p.t.throw_enabled else None
-    p.try_pickup()
+    """Z on the ground while holding the ball: aim. Pickups are handled in Player.update."""
+    if intent.z_pressed and p.held_ball is not None and p.t.throw_enabled:
+        return Aiming()
     return None
 
 
@@ -112,9 +110,6 @@ class Airborne(State):
             p.jump_cut_ready = False
         if p.vel.y >= 0:
             p.jump_cut_ready = False
-
-        if intent.z_pressed:
-            p.try_pickup()
         return None
 
 
@@ -148,8 +143,6 @@ class WallCling(State):
             p.jump_cut_ready = False
         if intent.move_x == self.side and p.t.wall_hold_sticks and p.vel.y > 0:
             p.vel.y = 0
-        if intent.z_pressed:
-            p.try_pickup()
         return None
 
     def gravity_scale(self, p: Player) -> float:
@@ -211,9 +204,11 @@ class Aiming(State):
     """Fixed in place. Left/right rotates the aim (full circle), up/down sets power."""
 
     name = "aiming"
+    allows_pickup = False
 
     def enter(self, p: Player) -> None:
         p.vel.update(0, 0)
+        p.pickup_buffer = 0
         p.aim_angle = 45.0 if p.facing > 0 else 135.0
         p.aim_power = (p.t.power_min + p.t.power_max) / 2
 

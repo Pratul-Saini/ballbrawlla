@@ -8,13 +8,15 @@ from ballbrawlla.physics.vec import Vector2
 from ballbrawlla.world.level import Level, Platform
 
 
-def make_game(platforms=(), player=(200, 650), ball=(600, 650), players=None, **tuning) -> Game:
-    """`players` is a list of spawn centers; defaults to a single player at `player`."""
+def make_game(platforms=(), player=(200, 650), ball=(600, 650), players=None, thin=(), **tuning) -> Game:
+    """`players` is a list of spawn centers; defaults to a single player at `player`.
+    `thin` is a list of (x, y, w, h) one-way platforms, added after the solid `platforms`."""
     spawns = players or [player]
     level = Level(
         width=1280,
         height=720,
-        platforms=[Platform(AABB(*p)) for p in platforms],
+        platforms=[Platform(AABB(*p)) for p in platforms]
+        + [Platform(AABB(*p), platform_type="thin") for p in thin],
         player_spawns=[Vector2(s) for s in spawns],
         ball_spawn=Vector2(ball),
     )

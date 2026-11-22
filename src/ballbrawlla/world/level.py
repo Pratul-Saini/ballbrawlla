@@ -13,10 +13,26 @@ from ballbrawlla.physics.shapes import AABB
 from ballbrawlla.physics.vec import Vector2
 
 
+SOLID = "solid"
+THIN = "thin"
+_TYPES = (SOLID, THIN)
+
+
 @dataclass
 class Platform:
     rect: AABB
     kind: str = "platform"  # "platform" or "bound"; only affects rendering
+    platform_type: str = SOLID  # "solid" blocks from all sides; "thin" is one-way
+
+    def __post_init__(self) -> None:
+        if not (isinstance(self.platform_type, str) and self.platform_type in _TYPES):
+            raise ValueError(
+                f"invalid platform type {self.platform_type!r} (expected 'thin' or 'solid')"
+            )
+
+    @property
+    def is_thin(self) -> bool:
+        return self.platform_type == THIN
 
 
 @dataclass
@@ -39,10 +55,16 @@ class Level:
             AABB(w - t, 0, t, h),  # right wall
         ]
         self.platforms = [Platform(r, "bound") for r in bounds] + self.platforms
-        self.solids: list[AABB] = [p.rect for p in self.platforms]
+        # Boundaries first, then solid platforms in input order; thin kept separate.
+        self.solids: list[AABB] = [p.rect for p in self.platforms if not p.is_thin]
+        self.thin: list[AABB] = [p.rect for p in self.platforms if p.is_thin]
 
     def spawn_for(self, player_index: int) -> Vector2:
         return Vector2(self.player_spawns[player_index % len(self.player_spawns)])
+
+
+def _platform_from_dict(p: dict) -> Platform:
+    return Platform(AABB(p["x"], p["y"], p["w"], p["h"]), platform_type=p.get("type", SOLID))
 
 
 def level_from_dict(data: dict) -> Level:
@@ -51,7 +73,7 @@ def level_from_dict(data: dict) -> Level:
         width=data["width"],
         height=data["height"],
         wall_thickness=data.get("wall_thickness", 32),
-        platforms=[Platform(AABB(p["x"], p["y"], p["w"], p["h"])) for p in data["platforms"]],
+        platforms=[_platform_from_dict(p) for p in data["platforms"]],
         player_spawns=[Vector2(s) for s in spawns],
         ball_spawn=Vector2(data["ball_spawn"]),
         name=data.get("name", "untitled"),
@@ -67,12 +89,15 @@ def level_to_dict(level: Level) -> dict:
         "wall_thickness": level.wall_thickness,
         "player_spawns": [[s.x, s.y] for s in level.player_spawns],
         "ball_spawn": [level.ball_spawn.x, level.ball_spawn.y],
-        "platforms": [
-            {"x": p.rect.x, "y": p.rect.y, "w": p.rect.w, "h": p.rect.h}
-            for p in level.platforms
-            if p.kind == "platform"
-        ],
+        "platforms": [_platform_to_dict(p) for p in level.platforms if p.kind == "platform"],
     }
+
+
+def _platform_to_dict(p: Platform) -> dict:
+    d = {"x": p.rect.x, "y": p.rect.y, "w": p.rect.w, "h": p.rect.h}
+    if p.is_thin:
+        d["type"] = THIN
+    return d
 
 
 def load_level(path: str | Path) -> Level:
