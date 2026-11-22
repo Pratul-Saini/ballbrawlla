@@ -81,3 +81,22 @@ def test_port_out_of_range(port):
 @pytest.mark.parametrize("addr,ok", [("", False), ("  ", False), ("1.2 .3", False), ("192.168.1.5", True)])
 def test_address(addr, ok):
     assert (check_address(addr) is None) is ok
+
+
+def _relay(monkeypatch, value):
+    from ballbrawlla.net import invite
+    monkeypatch.setattr(invite, "DEFAULT_RELAY", "")
+    if value:
+        monkeypatch.setenv(invite.RELAY_ENV, value)
+    else:
+        monkeypatch.delenv(invite.RELAY_ENV, raising=False)
+
+
+def test_online_modes_need_a_relay(monkeypatch):
+    _relay(monkeypatch, "")
+    assert "No relay server" in check_launch("host_online", LEVELS / "field_01.json", port=49322)
+    assert "No relay server" in check_launch("join_code", code="KQ7-M3X")
+    _relay(monkeypatch, "relay.example.com")
+    assert check_launch("join_code", code="kq7 m3x") is None
+    assert "6 characters" in check_launch("join_code", code="KQ7")
+    assert "football field" in check_launch("host_online", LEVELS / "arena_01.json", port=49322)

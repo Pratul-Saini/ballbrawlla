@@ -5,7 +5,8 @@
 ## Run and test (Windows, repo root)
 
 ```
-.venv\Scripts\python -m ballbrawlla [--local | --host | --join IP | --sandbox] [--level field_09]
+.venv\Scripts\python -m ballbrawlla [--local | --host [--online] | --join IP | --join-code CODE | --sandbox] [--level field_09]
+.venv\Scripts\python -m ballbrawlla.net.relay_server   # relay for invite codes; players use --relay 127.0.0.1
 .venv\Scripts\python -m pytest -q              # ~25 s, 386 tests
 .venv\Scripts\python -m pytest -q -m "not slow" # ~9 s, skips 3 vault sweeps
 python tools/gen_levels.py [field_NN ...]       # regenerate levels from code
@@ -25,6 +26,8 @@ python tools/gen_levels.py [field_NN ...]       # regenerate levels from code
   - `last_wall`: one cling per wall until landing.
   - Ledge assist: `will_clear_wall`.
 - `net/`: host/client JSON over TCP. `view.py` builds per-player views with hidden information.
+  - Internet play: `invite.py` (codes, `RelayRoom`, `dial`) + `relay_server.py` (asyncio byte-pipe relay). The game protocol runs through it unchanged.
+  - `DEFAULT_RELAY` stays empty until a relay is deployed; until then use `--relay` or `BALLBRAWLLA_RELAY`.
 - `render/`: `match_renderer.py` (views, zoom camera, HUD, F3 toggle), `renderer.py` (sandbox), `field_markers.py`.
 - `input.py` / `gamepad.py` (key layouts, controller slots), `notes.py` (F2 session notes in `logs/sessions/`, git-ignored), `config.py` (`Tuning`: every number).
 

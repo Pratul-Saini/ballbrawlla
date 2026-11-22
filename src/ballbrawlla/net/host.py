@@ -1,12 +1,21 @@
 """Host side: accepts clients, turns their input messages into Intents, and
 sends each client its view. The host's own player is slot 0; clients get 1..N-1.
 
+Clients arrive over the LAN listener or, for internet play, through a relay room (net/invite.py) whose
+sockets already lead to the joiner. Both go through the same hello/welcome handshake.
+
 Everything is non-blocking and driven from the game loop (no threads)."""
 
+from __future__ import annotations
+
 import socket
+from typing import TYPE_CHECKING
 
 from ballbrawlla.input import Intent
 from ballbrawlla.net.protocol import DEFAULT_PORT, PROTOCOL_VERSION, Connection
+
+if TYPE_CHECKING:
+    from ballbrawlla.net.invite import RelayRoom
 
 
 class RemoteInput:
@@ -55,9 +64,11 @@ class RemoteInput:
 
 class Host:
     def __init__(self, welcome: dict, max_players: int, port: int = DEFAULT_PORT,
-                 bind: str = "0.0.0.0") -> None:
-        """`welcome` holds the level and tuning sent to every joining client."""
+                 bind: str = "0.0.0.0", room: RelayRoom | None = None) -> None:
+        """`welcome` holds the level and tuning sent to every joining client. `room`, when given, also
+        lets players join through the relay with its invite code."""
         self.welcome = welcome
+        self.room = room
         self.max_players = max_players
         self.listener = socket.create_server((bind, port))
         self.listener.setblocking(False)
@@ -83,6 +94,8 @@ class Host:
             except (BlockingIOError, OSError):
                 break
             self._pending.append(Connection(sock))
+        if self.room is not None:
+            self._pending.extend(Connection(sock) for sock in self.room.poll())
 
         for conn in list(self._pending):
             for msg in conn.receive():
@@ -133,3 +146,5 @@ class Host:
         for conn in [*self._pending, *self.clients.values()]:
             conn.close()
         self.listener.close()
+        if self.room is not None:
+            self.room.close()

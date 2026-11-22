@@ -19,13 +19,9 @@ from ballbrawlla.launch import (
     MODE_LABELS, LevelInfo, check_launch, check_level, check_port, list_levels,
 )
 from ballbrawlla.net.discovery import Finder, FoundGame
+from ballbrawlla.net.invite import ALPHABET, CODE_LEN, check_relay, format_code, normalize_code
 from ballbrawlla.net.protocol import DEFAULT_PORT, lan_ip
 from ballbrawlla.world.level import load_level
-
-ONLINE_MATCH_INFO = (
-    "Coming soon: Online match. Two players connect to a shared server over the internet, so neither of you "
-    "hosts. No IP address to share and no router setup. It needs a server that stays running, and that server "
-    "isn't built yet. Until then, use Host and Join on the same network.")
 
 TITLE = "GRIDIRON SCRAMBLE"
 TAGLINE = "Catch it. Run it. Don't get tagged."
@@ -46,6 +42,7 @@ class Launch:
     level: Path | None = None
     port: int = DEFAULT_PORT
     address: str = ""
+    code: str = ""             # invite code, for "join_code"
 
 
 @dataclass
@@ -68,6 +65,7 @@ class MenuState:
     mode: str = ""                    # the mode waiting for a level
     port: int = DEFAULT_PORT
     address: str = ""
+    code: str = ""                    # invite code being typed (bare, without the dash)
     screen: str = "main"
     cursor: int = 0
     error: str | None = None          # message dialog; any key dismisses it
@@ -102,9 +100,16 @@ class MenuState:
             ]
         if self.screen == "online":
             return [
-                Item("HOST A GAME", "mode:host", self._port_reason(), hint=f"you are Blue, port {self.port}"),
-                Item("JOIN A GAME", "go:join", hint="you are Red"),
-                Item("ONLINE MATCH", "soon", ONLINE_MATCH_INFO, hint="coming soon", soon=True),
+                Item("HOST ONLINE GAME", "mode:host_online", check_relay() or self._port_reason(),
+                     hint="get an invite code to share"),
+                Item("JOIN WITH CODE", "go:code", check_relay(), hint="type the host's invite code"),
+                Item("HOST ON THIS NETWORK", "mode:host", self._port_reason(), hint=f"you are Blue, port {self.port}"),
+                Item("JOIN ON THIS NETWORK", "go:join", hint="you are Red"),
+            ]
+        if self.screen == "code":
+            return [
+                Item(f"CODE: {format_code(self.code)}_", "edit", hint="Ctrl+V pastes"),
+                Item("CONNECT", "launch:join_code", check_launch("join_code", code=self.code)),
             ]
         if self.screen == "join":
             if self.games:
@@ -143,7 +148,8 @@ class MenuState:
     def title(self) -> str:
         if self.screen == "level":
             return f"{MODE_LABELS[self.mode].upper()}: CHOOSE A LEVEL"
-        return {"main": "", "play": "PLAY", "freeplay": "FREE PLAY", "online": "ONLINE", "join": "JOIN A GAME"}[self.screen]
+        return {"main": "", "play": "PLAY", "freeplay": "FREE PLAY", "online": "ONLINE", "join": "JOIN ON THIS NETWORK",
+                "code": "JOIN WITH CODE"}[self.screen]
 
     # ---- navigation
     def _go(self, screen: str) -> None:
@@ -217,21 +223,45 @@ class MenuState:
             info = next(i for i in self.levels if i.key == arg)
             self.result = Launch(self.mode, info.path, self.port)
         elif kind == "launch":
-            self.result = Launch(arg, None, self.port, self.address.strip())
+            self.result = Launch(arg, None, self.port, self.address.strip(), self.code)
 
-    # ---- text entry (join address)
+    # ---- text entry (join address, invite code)
     @property
     def editing(self) -> bool:
-        items = self.items() if self.screen == "join" else []
+        items = self.items() if self.screen in ("join", "code") else []
         return bool(items) and not self.error and items[min(self.cursor, len(items) - 1)].action == "edit"
 
     def type_char(self, ch: str) -> None:
-        if self.editing and (ch.isdigit() or ch in ".:-" or ch.isalpha()) and len(self.address) < 40:
+        if not self.editing:
+            return
+        if self.screen == "code":
+            # Keep anything code-like (so a typo is shown and explained) but ignore dashes and spaces.
+            ch = normalize_code(ch)
+            if ch.isalnum() and len(self.code) < CODE_LEN + 2:
+                self.code += ch
+        elif (ch.isdigit() or ch in ".:-" or ch.isalpha()) and len(self.address) < 40:
             self.address += ch
 
     def backspace(self) -> None:
-        if self.editing:
+        if not self.editing:
+            return
+        if self.screen == "code":
+            self.code = self.code[:-1]
+        else:
             self.address = self.address[:-1]
+
+    def paste(self, text: str | None) -> None:
+        """Ctrl+V: a pasted code (or address) replaces what was typed. Pasting "Code: kq7-m3x" works too."""
+        if not self.editing or not text:
+            return
+        if self.screen == "code":
+            words = [normalize_code(w) for w in text.replace(":", " ").split()]
+            exact = [w for w in words if len(w) == CODE_LEN and all(c in ALPHABET for c in w)]
+            self.code = (exact[-1] if exact else normalize_code(text))[:CODE_LEN + 2]
+        else:
+            self.address = ""
+            for ch in text.strip():
+                self.type_char(ch)
 
 
 # ---------------------------------------------------------------- drawing
@@ -333,6 +363,9 @@ def draw(surface: pygame.Surface, state: MenuState, fonts: dict[str, pygame.font
              midbottom=(w // 2, h - 50))
     if state.screen == "online":
         text(small, f"your address: {lan_ip()}", DIM, midbottom=(w // 2, h - 50))
+    if state.screen == "code":
+        text(small, "The host sees the code on their waiting screen (Ctrl+C there copies it).", DIM,
+             midbottom=(w // 2, h - 50))
     text(small, "Up/Down: move   Enter / click / Cross: select   Esc / Circle: back", DIM, midbottom=(w // 2, h - 20))
 
     if state.error:
@@ -352,6 +385,13 @@ def draw(surface: pygame.Surface, state: MenuState, fonts: dict[str, pygame.font
     return rects
 
 
+def _clipboard() -> str | None:
+    try:
+        return pygame.scrap.get_text()
+    except (pygame.error, AttributeError):
+        return None
+
+
 def handle_event(state: MenuState, event: pygame.event.Event, rects: list[pygame.Rect]) -> None:
     if event.type == pygame.QUIT:
         state.quit = True
@@ -360,6 +400,8 @@ def handle_event(state: MenuState, event: pygame.event.Event, rects: list[pygame
             state.error = None
         elif event.key == pygame.K_ESCAPE:
             state.back() if state._stack else setattr(state, "quit", True)
+        elif event.key == pygame.K_v and event.mod & (pygame.KMOD_CTRL | pygame.KMOD_META) and state.editing:
+            state.paste(_clipboard())
         elif event.key == pygame.K_BACKSPACE:
             state.backspace() if state.editing else state.back()
         elif event.key in (pygame.K_UP, pygame.K_w) and not (state.editing and event.key == pygame.K_w):
