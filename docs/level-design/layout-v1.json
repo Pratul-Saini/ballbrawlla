@@ -1,0 +1,43 @@
+{
+  "_comment": "Single source of truth for the tall field's LEFT half. The right half mirrors it: x' = width - x - w. 'top' = height of the platform's top above the floor (px). Thin ledges are 12 px thick. For solids, 'h' is the height of the block. Edit this file, then run: python tools/layout_tools.py check && python tools/layout_tools.py diagram",
+  "arena": {"width": 2944, "height": 1880, "wall": 32, "yard_px": 24},
+  "thin_thickness": 12,
+  "frames": [
+    {"id": "F1", "name": "End zone pocket", "x0": 32, "x1": 272, "phase": 1},
+    {"id": "F2", "name": "QB ledge", "x0": 272, "x1": 512, "phase": 1},
+    {"id": "F3", "name": "Escape fork", "x0": 512, "x1": 752, "phase": 1},
+    {"id": "F4", "name": "20-30 yd: catch nests", "x0": 752, "x1": 992, "phase": 2},
+    {"id": "F5", "name": "30-40 yd: the gap", "x0": 992, "x1": 1232, "phase": 2},
+    {"id": "F6", "name": "40-50 yd: the hub", "x0": 1232, "x1": 1472, "phase": 2}
+  ],
+  "zones": [
+    {"id": "pocket", "name": "End zone pocket (scoring floor)", "x0": 32, "x1": 248, "frame": "F1"}
+  ],
+  "pieces": [
+    {"id": "gate",  "type": "solid", "x": 248,  "w": 24,  "top": 420, "h": 388, "role": "closes the pocket, 32 px slide slot"},
+    {"id": "qb",    "type": "thin",  "x": 272,  "w": 240, "top": 140, "role": "QB ledge, first 10 yd"},
+    {"id": "S1",    "type": "thin",  "x": 470,  "w": 80,  "top": 280, "role": "step to the bridge"},
+    {"id": "T1",    "type": "thin",  "x": 420,  "w": 100, "top": 420, "role": "sky bridge"},
+    {"id": "T2",    "type": "thin",  "x": 560,  "w": 100, "top": 420, "role": "sky bridge"},
+    {"id": "T3",    "type": "thin",  "x": 700,  "w": 100, "top": 420, "role": "sky bridge"},
+    {"id": "block", "type": "solid", "x": 720,  "w": 24,  "top": 140, "h": 140, "role": "taxes the floor route by about 0.4 s"},
+
+    {"id": "L1",    "type": "thin",  "x": 790,  "w": 90,  "top": 140, "role": "low shelf"},
+    {"id": "N1",    "type": "thin",  "x": 850,  "w": 100, "top": 280, "role": "catch nest, mid layer"},
+    {"id": "L2",    "type": "thin",  "x": 950,  "w": 90,  "top": 140, "role": "low shelf"},
+    {"id": "T4",    "type": "thin",  "x": 1010, "w": 100, "top": 420, "role": "bridge after the 210 px gap"},
+    {"id": "L3",    "type": "thin",  "x": 1110, "w": 90,  "top": 140, "role": "low shelf"},
+    {"id": "N2",    "type": "thin",  "x": 1130, "w": 100, "top": 280, "role": "catch nest, mid layer"},
+    {"id": "T5",    "type": "thin",  "x": 1150, "w": 100, "top": 420, "role": "bridge"},
+    {"id": "H1L",   "type": "thin",  "x": 1290, "w": 100, "top": 420, "role": "hub wing"},
+    {"id": "HL",    "type": "thin",  "x": 1290, "w": 100, "top": 140, "role": "hub step from the floor"},
+    {"id": "H0",    "type": "thin",  "x": 1372, "w": 200, "top": 280, "role": "hub main stage (centered on midfield)"},
+    {"id": "H2",    "type": "thin",  "x": 1422, "w": 100, "top": 560, "role": "hub apex"}
+  ],
+  "moves": [
+    {"from": "floor",  "to": "pocket", "how": "slide",       "note": "32 px slot under the gate"},
+    {"from": "qb",     "to": "gate",   "how": "wall climb",  "note": "about 1 s, the top counts as the end zone"},
+    {"from": "T1",     "to": "pocket", "how": "jump",        "note": "drop in over the gate"},
+    {"from": "T3",     "to": "T4",     "how": "long jump",   "note": "210 px gap, single jump with a clean take-off"}
+  ]
+}

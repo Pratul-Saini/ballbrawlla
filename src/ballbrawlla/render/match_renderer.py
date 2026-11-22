@@ -142,7 +142,7 @@ class MatchRenderer:
 
     def _draw_field(self) -> None:
         f, lv = self.field, self.level
-        ez_w = self.t.end_zone_yards * self.t.yard_px
+        ez_w = self.t.end_zone_yards * self.field.yard_px
         for team in Team:
             x0 = f.goal_line_x(team) - (ez_w if team is Team.LEFT else 0)
             surf = pygame.Surface((ez_w, lv.height), pygame.SRCALPHA)
@@ -239,7 +239,7 @@ class MatchRenderer:
         x0, y0, w, h = 40, 6, vw - 80, MINIMAP_H
         sx, sy = w / self.level.width, h / self.level.height
         pygame.draw.rect(self.screen, (16, 17, 22), (x0, y0, w, h))
-        ez_w = self.t.end_zone_yards * self.t.yard_px
+        ez_w = self.t.end_zone_yards * self.field.yard_px
         for team in Team:
             gx = self.field.goal_line_x(team) - (ez_w if team is Team.LEFT else 0)
             pygame.draw.rect(self.screen, tuple(c // 3 for c in _team_color(team)),

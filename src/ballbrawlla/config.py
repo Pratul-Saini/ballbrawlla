@@ -34,6 +34,7 @@ class Tuning:
     slide_speed: float = 560
     slide_duration: float = 0.45
     slide_friction: float = 2.5       # per-second decay of slide speed
+    crawl_speed: float = 110          # crouched walking speed (about 35% of run); 0 = frozen while crouched
 
     # --- Wall cling ---
     wall_gravity_scale: float = 0.3   # gravity multiplier while clinging (wall friction)

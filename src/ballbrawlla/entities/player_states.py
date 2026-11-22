@@ -164,7 +164,8 @@ class Crouch(State):
     def update(self, p: Player, intent: Intent, dt: float) -> State | None:
         if not p.contacts.on_ground:
             return Airborne()
-        p.vel.x = 0
+        # Crawl: a slide that ends under a low gap must not trap the player there.
+        p.vel.x = intent.move_x * p.t.crawl_speed
         _face(p, intent.move_x)
         if (nxt := _grab_or_aim(p, intent)) is not None:
             return nxt
