@@ -58,7 +58,7 @@ The state machine reads these flags on the next tick.
 
 ## Standing up (`box_is_free`)
 
-Crouch and slide shrink the box from 48 px to 30 px with the **feet kept planted**. Standing up needs the taller box to be free of **solids only**. Thin platforms are ignored, so you can stand up under a thin walkway.
+Crouch and slide shrink the box from 42 px to 26 px with the **feet kept planted**. Standing up needs the taller box to be free of **solids only**. Thin platforms are ignored, so you can stand up under a thin walkway.
 
 ## Ball collision (circle vs box)
 
@@ -81,7 +81,7 @@ There is no spin. A ball hitting a surface at an angle keeps rolling in the same
 
 ## Tunnelling
 
-- Players move at most 8 px per sub-step. Their minimum box height is 30 px and their max fall speed is 1200 px/s, which is 10 px per tick, so two sub-steps per tick.
+- Players move at most 8 px per sub-step. Their minimum box height is 26 px and their max fall speed is 1200 px/s, which is 10 px per tick, so two sub-steps per tick.
 - The ball takes sub-steps of at most half its radius (6 px). Its diameter is 24 px, so a platform 1 px thick or more cannot be skipped, even at the maximum throw speed of 1400 px/s (11.7 px per tick).
 
 ## Not modeled

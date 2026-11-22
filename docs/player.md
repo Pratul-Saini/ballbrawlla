@@ -4,7 +4,7 @@ Source: `entities/player.py` (the body, tick order, ball actions) and `entities/
 
 ## The body
 
-- A box 28 px wide and 48 px tall (30 px tall while crouching or sliding), moved by the rules in [physics.md](physics.md).
+- A box 24 px wide and 42 px tall (26 px tall while crouching or sliding), moved by the rules in [physics.md](physics.md).
 - `facing` is -1 or +1. It follows the last direction pressed and drives the slide direction and where a held ball sits.
 - `contacts` holds the four contact flags from the last tick.
 - `jumps_left` counts air jumps (1 by default, so a double jump).
@@ -56,7 +56,7 @@ Each state's `update` runs before physics for the tick. It sets velocity and ret
 ### Airborne
 - Lands (becomes Grounded) when `on_ground` is true and `vel.y >= 0`.
 - Steering: `vel.x = move_x * air_speed` (320 px/s), unless `control_lock` is running.
-- Pressing into a wall (`wall_left` with left held, or `wall_right` with right held) becomes WallCling.
+- Pressing into a wall (`wall_left` with left held, or `wall_right` with right held) becomes WallCling, unless the rest of the current jump will carry the feet above that wall's top (**ledge assist**, `Player.will_clear_wall`). Running up a step you can clear never sticks you to its face.
 - Up with air jumps left: double jump, `vel.y = -double_jump_speed` (680 px/s), costing one air jump. This **replaces** the vertical velocity, so doing it near the apex gains the most.
 - **Jump cut:** after a jump, releasing Up while still rising multiplies `vel.y` by 0.5 once. A short tap gives a short hop. Holding Up gives the full jump.
 
@@ -70,13 +70,13 @@ Each state's `update` runs before physics for the tick. It sets velocity and ret
 - `wall_hold_sticks` (off by default) would stop sliding entirely while pressing into the wall.
 
 ### Crouch
-- Height 30 px. The player **crawls** at `crawl_speed` (110 px/s, about 35% of run speed) in the direction held, so a slide that ends under a low gap never traps them.
+- Height 26 px. The player **crawls** at `crawl_speed` (110 px/s, about 35% of run speed) in the direction held, so a slide that ends under a low gap never traps them.
 - Becomes Airborne if the ground goes away.
 - Up jumps if there is room to stand. Releasing Down returns to Grounded if there is room.
 - Z picks up or aims as in Grounded.
 
 ### Slide
-- Entered from Grounded with Down while moving. Height 30 px.
+- Entered from Grounded with Down while moving. Height 26 px.
 - Starts at `slide_speed` 560 px/s in the facing direction. Speed decays by a factor of `(1 - 2.5 * dt)` each tick.
 - Lasts 0.45 s, or ends earlier if speed drops under 30% of run speed. A full slide covers roughly 150 px.
 - Up jumps out of it if there is room to stand.

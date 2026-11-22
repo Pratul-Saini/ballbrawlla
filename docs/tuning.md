@@ -13,9 +13,9 @@ In network play the host's `Tuning` is sent to the joiner, so both sides use the
 ## Player body
 | Field | Default | Meaning |
 |---|---|---|
-| `player_width` | 28 | box width |
-| `player_height` | 48 | standing height |
-| `player_crouch_height` | 30 | crouch and slide height |
+| `player_width` | 24 | box width |
+| `player_height` | 42 | standing height |
+| `player_crouch_height` | 26 | crouch and slide height |
 | `player_gravity` | 2200 | px/s² |
 | `player_max_fall_speed` | 1200 | px/s cap |
 
