@@ -44,6 +44,7 @@ class Renderer:
         self.font = pygame.font.Font(None, 22)
         self.small = pygame.font.Font(None, 18)
         self.debug = True
+        self.show_controls = True   # F3: the key list in the debug overlay
         self._cam = Vector2()
 
     def _o(self, v: Vector2) -> Vector2:
@@ -145,7 +146,9 @@ class Renderer:
         ]
         if p.state.name == "aiming":
             lines.append(f"aim {p.aim_angle:5.1f} deg   power {p.aim_power:6.1f}")
-        lines.append("arrows / stick move  Up / Cross jump  Z / Square grab/aim/cancel  X / Circle throw  R reset  F1 debug  Esc quit")
+        if self.show_controls:
+            lines.append("arrows / stick move  Up / Cross jump  Z / Square grab/aim/cancel  X / Circle throw  "
+                         "R reset  F1 debug  F2 notes  F3 hide controls  Esc quit")
         for i, line in enumerate(lines):
             self.screen.blit(self.font.render(line, True, TEXT), (40, 40 + i * 18))
         if status:
