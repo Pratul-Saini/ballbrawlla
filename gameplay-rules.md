@@ -128,6 +128,7 @@ A touchdown is worth 1 point, and the first team to **5** wins. The host presses
 |---|---|
 | `python -m ballbrawlla` | **Practice:** you are always on offense. The Defender is placed automatically and never moves. |
 | `python -m ballbrawlla --host` / `--join <ip>` | A 2-player match over the local network. The match starts when both are connected and restarts if someone leaves. |
+| `python -m ballbrawlla --local` | Two players on one screen: Blue on W A S D + F / G, Red on the arrows + . and /; first controller is Blue's, second Red's. Nothing is hidden, and the camera zooms out to keep both players in view. |
 | `python -m ballbrawlla --sandbox` | The original free-play arena (no rules), for tuning movement. |
 
 ## Interpretations and open questions

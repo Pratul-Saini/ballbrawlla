@@ -6,6 +6,8 @@ of the dict entirely, so a client can't peek at it:
 
 * the offense's throw angle/power is never in the defense's view
 * the defense's Defender spot (during the play call) is never in the offense's view
+
+Local play (both players at one screen) uses `local=True`, which shows both.
 """
 
 from __future__ import annotations
@@ -36,7 +38,8 @@ def _actor(p: Player) -> dict:
     }
 
 
-def make_view(s: Session, pid: int) -> dict:
+def make_view(s: Session, pid: int, local: bool = False) -> dict:
+    """The view for human `pid`. `local=True`: one shared screen, nothing hidden."""
     my_team = s.team_of_human[pid]
     d = s.down
     side = "offense" if my_team is d.offense else "defense"
@@ -55,6 +58,7 @@ def make_view(s: Session, pid: int) -> dict:
         "winner": None if s.match.winner is None else int(s.match.winner),
         "message": s.message,
         "timer": None,
+        "local": local,
     }
 
     if s.phase is Phase.PLAY_CALL:
@@ -69,9 +73,9 @@ def make_view(s: Session, pid: int) -> dict:
             "def_locked": c.defense_locked,
             "restarts": c.restarts,
         }
-        if side == "offense":
+        if local or side == "offense":
             call["aim"] = [_r(c.aim_angle), _r(c.aim_power)]
-        else:
+        if local or side == "defense":
             call["def"] = [_r(c.def_spot.x), _r(c.def_spot.y)]
         v["call"] = call
         v["timer"] = _r(c.timer)
@@ -90,7 +94,7 @@ def make_view(s: Session, pid: int) -> dict:
         }
         if s.phase is Phase.PRE_THROW:
             v["timer"] = _r(s.timer)
-            if side == "offense":  # your own locked-in throw
+            if local or side == "offense":  # your own locked-in throw
                 v["aim"] = [_r(s.qb.aim_angle), _r(s.qb.aim_power)]
         elif s.phase is Phase.LIVE and s.loose_timer is not None:
             v["timer"] = _r(s.loose_timer)

@@ -44,7 +44,7 @@ DEBUG_BUTTONS = {pygame.CONTROLLER_BUTTON_BACK, BUTTON_TOUCHPAD}     # Create, t
 
 @dataclass
 class PadHeld:
-    """Held (not edge) state, combined over every connected pad."""
+    """Held (not edge) state of one pad, or combined over every connected pad."""
 
     move_x: int = 0
     vertical: int = 0      # +1 up, -1 down
@@ -65,8 +65,8 @@ def _axis(pad, axis: int) -> float:
 
 class Gamepads:
     def __init__(self) -> None:
-        self.pads: dict[int, object] = {}
-        self._edges = PadEdges()
+        self.pads: dict[int, object] = {}      # instance id -> pad, in the order they connected
+        self._edges: dict[int, PadEdges] = {}
         self._r2_down: dict[int, bool] = {}
         self.available = False
         try:
@@ -99,16 +99,18 @@ class Gamepads:
         elif event.type == pygame.CONTROLLERDEVICEREMOVED:
             pad = self.pads.pop(event.instance_id, None)
             self._r2_down.pop(event.instance_id, None)
+            self._edges.pop(event.instance_id, None)
             if pad is not None and hasattr(pad, "quit"):
                 pad.quit()
         elif event.type == pygame.CONTROLLERBUTTONDOWN:
             b = event.button
+            edges = self._edges.setdefault(event.instance_id, PadEdges())
             if b in JUMP_BUTTONS:
-                self._edges.jump = True
+                edges.jump = True
             elif b in GRAB_BUTTONS:
-                self._edges.grab = True
+                edges.grab = True
             elif b in THROW_BUTTONS:
-                self._edges.throw = True
+                edges.throw = True
             elif b in RESTART_BUTTONS:
                 return "restart"
             elif b in DEBUG_BUTTONS:
@@ -116,20 +118,34 @@ class Gamepads:
         elif event.type == pygame.CONTROLLERAXISMOTION and event.axis == pygame.CONTROLLER_AXIS_TRIGGERRIGHT:
             down = event.value / AXIS_MAX >= TRIGGER_THRESHOLD
             if down and not self._r2_down.get(event.instance_id, False):
-                self._edges.throw = True
+                self._edges.setdefault(event.instance_id, PadEdges()).throw = True
             self._r2_down[event.instance_id] = down
         return None
 
-    def consume_edges(self) -> PadEdges:
-        edges, self._edges = self._edges, PadEdges()
-        return edges
+    def _ids(self, slot: int | None) -> list[int]:
+        """All pads (slot None), or just the slot-th pad to have connected."""
+        ids = list(self.pads)
+        return ids if slot is None else ids[slot:slot + 1]
+
+    def consume_edges(self, slot: int | None = None) -> PadEdges:
+        """Button presses since the last call, for every pad or for one slot."""
+        out = PadEdges()
+        for pid in (list(self._edges) if slot is None else self._ids(slot)):
+            e = self._edges.pop(pid, None)
+            if e is not None:
+                out.jump |= e.jump
+                out.grab |= e.grab
+                out.throw |= e.throw
+        return out
 
     # ------------------------------------------------------------ held state
 
-    def held(self) -> PadHeld:
+    def held(self, slot: int | None = None) -> PadHeld:
+        """Held state for every pad combined, or for the slot-th pad to connect
+        (local play: slot 0 is Blue's pad, slot 1 is Red's)."""
         out = PadHeld()
         best_aim = 0.0
-        for pad in self.pads.values():
+        for pad in (self.pads[i] for i in self._ids(slot)):
             lx = _axis(pad, pygame.CONTROLLER_AXIS_LEFTX)
             ly = -_axis(pad, pygame.CONTROLLER_AXIS_LEFTY)  # SDL: down is positive
             mx = (lx >= MOVE_DEADZONE) - (lx <= -MOVE_DEADZONE)

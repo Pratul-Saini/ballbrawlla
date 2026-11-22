@@ -2,7 +2,9 @@
 client's screen go through exactly the same code and the same hidden-info rules.
 
 World is larger than the window: a camera follows what you control, and a
-minimap across the top shows the whole field.
+minimap across the top shows the whole field. In local play (two players on one
+screen, view["local"]) the camera zooms out to keep both players in frame and
+both sides' choices are shown.
 """
 
 from __future__ import annotations
@@ -52,20 +54,56 @@ def _ordinal(n: int) -> str:
     return {1: "1st", 2: "2nd", 3: "3rd"}.get(n, f"{n}th")
 
 
+MIN_ZOOM = 0.4          # local play: how far the shared camera may zoom out
+FRAME_MARGIN = (260, 200)  # world px kept around the players when framing them
+
+
 class Camera:
+    """`pos` is the world position of the screen's top-left corner; `zoom` is the
+    scale (1 = one world px per screen px, 0.5 = twice as much world on screen)."""
+
     def __init__(self, viewport: tuple[int, int]) -> None:
         self.vw, self.vh = viewport
         self.pos = Vector2()
+        self.zoom = 1.0
         self._placed = False
 
-    def follow(self, target: Vector2, level: Level, dt: float) -> None:
-        desired = Vector2(target.x - self.vw / 2, target.y - self.vh / 2)
-        desired.x = min(max(desired.x, 0), max(0, level.width - self.vw))
-        desired.y = min(max(desired.y, 0), max(0, level.height - self.vh))
+    @property
+    def world_size(self) -> tuple[float, float]:
+        return self.vw / self.zoom, self.vh / self.zoom
+
+    def _place(self, center: Vector2, level: Level, dt: float, zoom: float) -> None:
+        if not self._placed:
+            self.zoom = zoom
+        else:
+            self.zoom += (zoom - self.zoom) * min(1.0, dt * 4)
+        ww, wh = self.world_size
+
+        def clamp(c: float, view: float, size: float) -> float:
+            if size <= view:
+                return (size - view) / 2          # level smaller than the view: center it
+            return min(max(c - view / 2, 0), size - view)
+
+        desired = Vector2(clamp(center.x, ww, level.width), clamp(center.y, wh, level.height))
         if not self._placed:
             self.pos, self._placed = desired, True
         else:
             self.pos += (desired - self.pos) * min(1.0, dt * 8)
+
+    def follow(self, target: Vector2, level: Level, dt: float) -> None:
+        """Keep `target` centred at normal scale."""
+        self._place(target, level, dt, 1.0)
+
+    def frame(self, points: list[Vector2], level: Level, dt: float, top_inset: float = 0) -> None:
+        """Keep every point on screen, zooming out (down to MIN_ZOOM) if needed.
+        `top_inset` is screen px covered by the HUD at the top."""
+        mx, my = FRAME_MARGIN
+        xs, ys = [p.x for p in points], [p.y for p in points]
+        bw = max(xs) - min(xs) + 2 * mx
+        bh = max(ys) - min(ys) + 2 * my
+        zoom = max(MIN_ZOOM, min(1.0, self.vw / bw, (self.vh - top_inset) / bh))
+        center = Vector2((max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2 - top_inset / (2 * zoom))
+        self._place(center, level, dt, zoom)
 
 
 class MatchRenderer:
@@ -82,6 +120,9 @@ class MatchRenderer:
         self.button_rect: pygame.Rect | None = None
         self.markers = FieldMarkers(field)
         self._hud_band: pygame.Surface | None = None
+        self.hud_h = HUD_H
+        # Names shown in hints for the "grab" (Z) and "lock in" (X) actions.
+        self.key_names = {"grab": "Z / Square", "lock": "X / Circle", "restart": "R"}
 
     # ------------------------------------------------------------ input helper
 
@@ -91,19 +132,22 @@ class MatchRenderer:
     # ------------------------------------------------------------ helpers
 
     def _w(self, x: float, y: float) -> tuple[float, float]:
-        return (x - self.camera.pos.x, y - self.camera.pos.y)
+        z = self.camera.zoom
+        return ((x - self.camera.pos.x) * z, (y - self.camera.pos.y) * z)
 
     def _wrect(self, x: float, y: float, w: float, h: float) -> pygame.Rect:
         sx, sy = self._w(x, y)
-        return pygame.Rect(round(sx), round(sy), round(w), round(h))
+        z = self.camera.zoom
+        return pygame.Rect(round(sx), round(sy), max(1, round(w * z)), max(1, round(h * z)))
 
     def _band(self, x0: float, x1: float, color_rgba) -> None:
+        z = self.camera.zoom
         sx0, _ = self._w(x0, 0)
         sx1, _ = self._w(x1, 0)
-        w = max(2, int(sx1 - sx0) + self.t.player_width)
+        w = max(2, int(sx1 - sx0 + self.t.player_width * z))
         surf = pygame.Surface((w, self.screen.get_height()), pygame.SRCALPHA)
         surf.fill(color_rgba)
-        self.screen.blit(surf, (sx0 - self.t.player_width / 2, 0))
+        self.screen.blit(surf, (sx0 - self.t.player_width * z / 2, 0))
 
     def _text(self, text: str, pos, color=TEXT, font=None, center=False) -> None:
         img = (font or self.font).render(text, True, color)
@@ -115,7 +159,10 @@ class MatchRenderer:
     # ------------------------------------------------------------ main
 
     def draw(self, view: dict, fps: float, dt: float, status: str = "") -> None:
-        self.camera.follow(self._camera_target(view), self.level, dt)
+        if view.get("local"):
+            self.camera.frame(self._focus_points(view), self.level, dt, top_inset=self.hud_h)
+        else:
+            self.camera.follow(self._camera_target(view), self.level, dt)
         s = self.screen
         s.fill(BG)
         self._draw_field()
@@ -139,10 +186,32 @@ class MatchRenderer:
                 return Vector2(a["x"] + a["w"] / 2, a["y"] + a["h"] / 2)
         return Vector2(self.level.width / 2, self.level.height / 2)
 
+    def _focus_points(self, view: dict) -> list[Vector2]:
+        """Local play: what both players need to see (their spawn picks during the
+        play call; both runners - and a ball in flight - during the play)."""
+        h = self.t.player_height
+        pts: list[Vector2] = []
+        call = view.get("call")
+        if call is not None:
+            pts.append(Vector2(call["qb"][0], call["qb"][1] - h / 2))
+            if "def" in call:
+                pts.append(Vector2(call["def"][0], call["def"][1] - h / 2))
+        for a in view.get("actors", ()):
+            if a["role"] != "QB":
+                pts.append(Vector2(a["x"] + a["w"] / 2, a["y"] + a["h"] / 2))
+        ball = view.get("ball")
+        if ball is not None and view["phase"] == "live" and ball["holder"] is None:
+            pts.append(Vector2(ball["x"], ball["y"]))
+        return pts or [Vector2(self.level.width / 2, self.level.height / 2)]
+
+    def _is_mine(self, view: dict, team: int, role: str) -> bool:
+        """Highlight the runner(s) the people at this screen control."""
+        return role != "QB" and (view.get("local") or team == view["team"])
+
     # ------------------------------------------------------------ world
 
     def _draw_field(self) -> None:
-        self.markers.draw(self.screen, self.camera.pos, pinned_label_y=HUD_H + 4)
+        self.markers.draw(self.screen, self.camera.pos, pinned_label_y=self.hud_h + 4, zoom=self.camera.zoom)
 
     def _draw_platforms(self) -> None:
         for plat in self.level.platforms:
@@ -173,14 +242,15 @@ class MatchRenderer:
         c = Vector2(self._w(center.x, center.y))
         a = math.radians(angle)
         d = Vector2(math.cos(a), -math.sin(a))
-        pygame.draw.circle(self.screen, AIM_RING, c, AIM_RING_RADIUS, 1)
+        ring = max(24, AIM_RING_RADIUS * self.camera.zoom)
+        pygame.draw.circle(self.screen, AIM_RING, c, ring, 1)
         frac = (power - t.power_min) / max(1e-6, t.power_max - t.power_min)
-        pygame.draw.line(self.screen, AIM_LINE, c, c + d * (AIM_RING_RADIUS * (0.3 + 0.7 * frac)), 3)
+        pygame.draw.line(self.screen, AIM_LINE, c, c + d * (ring * (0.3 + 0.7 * frac)), 3)
         vel = d * power
         for i in range(1, 22):
             tt = i * 0.05
-            pt = c + vel * tt + Vector2(0, 0.5 * t.ball_gravity * tt * tt)
-            pygame.draw.circle(self.screen, TRAJ, pt, 2)
+            pt = center + vel * tt + Vector2(0, 0.5 * t.ball_gravity * tt * tt)   # world
+            pygame.draw.circle(self.screen, TRAJ, self._w(pt.x, pt.y), 2)
 
     # ------------------------------------------------------------ phases
 
@@ -189,11 +259,13 @@ class MatchRenderer:
         off = view["offense"]
         dfn = 1 - off
         h = self.t.player_height
-        me_off = view["side"] == "offense"
+        local = bool(view.get("local"))
+        me_off = local or view["side"] == "offense"
+        me_def = local or view["side"] == "defense"
 
         if call["picks"] and not call["off_locked"]:
             self._band(*call["qb_range"], (*QB_REGION, 30))
-        if not me_off and not call["def_locked"]:
+        if me_def and not call["def_locked"]:
             self._band(*call["def_range"], _team_color(dfn, 30))
 
         qb = call["qb"]
@@ -204,19 +276,21 @@ class MatchRenderer:
             self._draw_aim(Vector2(qb[0], qb[1] - h / 2), *call["aim"])
 
     def _draw_actors(self, view: dict) -> None:
+        z = self.camera.zoom
         for a in view["actors"]:
             feet_x = a["x"] + a["w"] / 2
-            me = a["team"] == view["team"] and a["role"] != "QB"
+            me = self._is_mine(view, a["team"], a["role"])
             self._draw_figure(feet_x, a["y"] + a["h"], a["team"], a["role"], me=me)
             if me:
                 pygame.draw.circle(
-                    self.screen, (90, 200, 120), self._w(feet_x, a["y"] + a["h"] / 2), self.t.tag_radius, 1
+                    self.screen, (90, 200, 120), self._w(feet_x, a["y"] + a["h"] / 2),
+                    max(4, self.t.tag_radius * z), 1,
                 )
         if "aim" in view:
             qb = view["actors"][0]
             self._draw_aim(Vector2(qb["x"] + qb["w"] / 2, qb["y"] + qb["h"] / 2), *view["aim"])
         b = view["ball"]
-        pygame.draw.circle(self.screen, BALL, self._w(b["x"], b["y"]), self.t.ball_radius)
+        pygame.draw.circle(self.screen, BALL, self._w(b["x"], b["y"]), max(3, self.t.ball_radius * z))
 
     # ------------------------------------------------------------ HUD
 
@@ -249,30 +323,38 @@ class MatchRenderer:
         if "ball" in view:
             dot(view["ball"]["x"], view["ball"]["y"], BALL, 2)
         cam = self.camera
+        ww, wh = cam.world_size
         pygame.draw.rect(self.screen, (200, 200, 200),
-                         (x0 + cam.pos.x * sx, y0 + cam.pos.y * sy, cam.vw * sx, cam.vh * sy), 1)
+                         (x0 + cam.pos.x * sx, y0 + cam.pos.y * sy, ww * sx, wh * sy), 1)
 
     def _draw_hud(self, view: dict, fps: float, status: str) -> None:
         vw, vh = self.screen.get_size()
-        if self._hud_band is None or self._hud_band.get_width() != vw:
-            self._hud_band = pygame.Surface((vw, HUD_H), pygame.SRCALPHA)
+        local = bool(view.get("local"))
+        me, off = Team(view["team"]), Team(view["offense"])
+        if local and view["phase"] == PLAY_CALL:
+            hints = [f"{off.display} (offense): " + self._phase_hint(view, "offense"),
+                     f"{off.other.display} (defense): " + self._phase_hint(view, "defense", head=False)]
+        else:
+            hints = [h for h in [self._phase_hint(view)] if h]
+        self.hud_h = MINIMAP_H + 34 + 20 * max(1, len(hints))
+        if self._hud_band is None or self._hud_band.get_size() != (vw, self.hud_h):
+            self._hud_band = pygame.Surface((vw, self.hud_h), pygame.SRCALPHA)
             self._hud_band.fill((16, 17, 22, 200))
         self.screen.blit(self._hud_band, (0, 0))
         self._draw_minimap(view)
-        me, off = Team(view["team"]), Team(view["offense"])
         score = view["score"]
         top = MINIMAP_H + 12
-        line = (
-            f"Blue {score[0]} - {score[1]} Red   |   {_ordinal(view['down'])} down, "
-            f"{off.display} on offense   |   You: {me.display} ({view['side']})"
-        )
+        line = f"Blue {score[0]} - {score[1]} Red   |   {_ordinal(view['down'])} down, {off.display} on offense"
+        if local:
+            line += "   |   local 2-player"
+        else:
+            line += f"   |   You: {me.display} ({view['side']})"
         if view["practice"]:
             line += "   |   practice"
         self._text(line, (40, top))
 
-        hint = self._phase_hint(view)
-        if hint:
-            self._text(hint, (40, top + 20), DIM)
+        for i, hint in enumerate(hints):
+            self._text(hint, (40, top + 20 + 20 * i), DIM)
         if status:
             self._text(status, (40, vh - 26), DIM)
 
@@ -280,7 +362,9 @@ class MatchRenderer:
         if msg and view["phase"] in ("dead", "game_over"):
             self._text(msg, (vw / 2, vh / 2 - 60), BANNER, self.big, center=True)
             if view["phase"] == "game_over":
-                self._text("Host: press R for a new match", (vw / 2, vh / 2 - 20), DIM, center=True)
+                who = "Press" if local else "Host: press"
+                self._text(f"{who} {self.key_names['restart']} for a new match", (vw / 2, vh / 2 - 20), DIM,
+                           center=True)
 
         self.button_rect = None
         label = self._button_label(view)
@@ -299,46 +383,50 @@ class MatchRenderer:
         call = view.get("call")
         if view["phase"] != PLAY_CALL or call is None:
             return None
-        if view["side"] == "offense":
+        if view.get("local") or view["side"] == "offense":   # local: the mouse belongs to the offense
             if call["off_locked"]:
                 return None
             return "Confirm QB spot" if call["placing"] else "Lock in throw"
         return None if call["def_locked"] else "Lock in Defender"
 
-    def _phase_hint(self, view: dict) -> str:
+    def _phase_hint(self, view: dict, side: str | None = None, head: bool = True) -> str:
         phase, timer = view["phase"], view.get("timer")
+        side = side or view["side"]
+        grab, lock = self.key_names["grab"], self.key_names["lock"]
         if phase == "waiting":
             return "Waiting for the other player to join..."
         if phase == PLAY_CALL:
             call = view["call"]
-            mine_locked = call["off_locked"] if view["side"] == "offense" else call["def_locked"]
+            mine_locked = call["off_locked"] if side == "offense" else call["def_locked"]
             locks = (f"offense {'locked' if call['off_locked'] else '...'}, "
                      f"defense {'locked' if call['def_locked'] else '...'}")
             restarted = "  (play call restarted)" if call["restarts"] else ""
-            head = f"PLAY CALL {timer:4.1f}s   [{locks}]{restarted}   "
+            prefix = f"PLAY CALL {timer:4.1f}s   [{locks}]{restarted}   " if head else ""
             if mine_locked:
-                return head + "Locked in - waiting for the other side"
-            if view["side"] == "defense":
-                return head + "Drag the Defender (arrows / stick) inside your zone - Z / Square / button: lock in"
+                return prefix + "Locked in - waiting for the other side"
+            if side == "defense":
+                drag = "Move" if view.get("local") else "Drag"
+                return prefix + f"{drag} the Defender inside your zone - {grab} / button: lock in"
             if call["placing"]:
-                return head + "Drag the QB (arrows / stick) in the yellow zone - Z / Square / button: confirm - X / Circle: lock in"
-            back = " - click QB / Z: move QB" if call["picks"] else ""
-            return head + "Aim: hold mouse and point (farther = more power), right stick, or arrows - X / Circle / button: lock in" + back
+                return prefix + f"Drag the QB (or move it) in the yellow zone - {grab} / button: confirm - {lock}: lock in"
+            back = f" - {grab} / click QB: move it" if call["picks"] else ""
+            return prefix + f"Aim (mouse, right stick or keys) - {lock} / button: lock in" + back
         if phase == "pre_throw":
             return f"THROW IN {timer:4.1f}s - get open (WR) / get in position (DEF)"
         if phase == "live":
             holder = view["ball"]["holder"]
             if holder is None:
-                return f"LOOSE BALL - dead in {timer:3.1f}s, Z / Square to pick up" if timer is not None else "Ball in the air - Z / Square to catch"
+                return (f"LOOSE BALL - dead in {timer:3.1f}s, {grab} to pick up" if timer is not None
+                        else f"Ball in the air - {grab} to catch")
             if holder == "WR":
-                return "WR has the ball: run to the end zone / DEF: Z / Square to tag"
-            return "INTERCEPTION: DEF runs the other way / WR: Z / Square to tag"
+                return f"WR has the ball: run to the end zone / DEF: {grab} to tag"
+            return f"INTERCEPTION: DEF runs the other way / WR: {grab} to tag"
         return ""
 
     def _draw_debug(self, view: dict, fps: float) -> None:
         lines = [f"fps {fps:5.1f}  tick {view['tick']}  phase {view['phase']}"]
         for a in view.get("actors", ()):
-            if a["team"] == view["team"] and a["role"] != "QB":
+            if self._is_mine(view, a["team"], a["role"]):
                 flags = "".join(ch if on else "." for ch, on in zip("GCLR", a["c"]))
                 lines.append(f"{a['role']} {a['s']:<10} vel ({a['vx']:7.1f}, {a['vy']:7.1f}) contacts {flags}")
         for i, line in enumerate(lines):

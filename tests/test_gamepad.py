@@ -140,17 +140,39 @@ def test_unplugging_removes_the_pad(pads):
 
 def test_keyboard_input_merges_the_controller(pads):
     g, pad = pads
-    k = KeyboardInput(gamepads=False)
-    k.gamepads = g
+    k = KeyboardInput(shared_pads=g)              # events go to the shared pads, as in local play
     pad.tilt(LX, -1.0)
     pad.buttons.add(A)
-    k.handle_event(ev(pygame.CONTROLLERBUTTONDOWN, button=A, instance_id=7))
-    k.handle_event(ev(pygame.CONTROLLERBUTTONDOWN, button=X, instance_id=7))
+    g.handle_event(ev(pygame.CONTROLLERBUTTONDOWN, button=A, instance_id=7))
+    g.handle_event(ev(pygame.CONTROLLERBUTTONDOWN, button=X, instance_id=7))
     i = k.consume()
     assert i.move_x == -1 and i.jump_pressed and i.jump_held and i.up_held and i.z_pressed
     i = k.consume()
     assert not i.jump_pressed and not i.z_pressed and i.jump_held
+    assert g.handle_event(ev(pygame.CONTROLLERBUTTONDOWN, button=pygame.CONTROLLER_BUTTON_START, instance_id=7)) == "restart"
+
+
+def test_an_input_that_owns_the_pads_forwards_their_events():
+    k = KeyboardInput()
+    k.gamepads.pads.clear()
+    k.gamepads.pads[7] = FakePad()
     assert k.handle_event(ev(pygame.CONTROLLERBUTTONDOWN, button=pygame.CONTROLLER_BUTTON_START, instance_id=7)) == "restart"
+    k.handle_event(ev(pygame.CONTROLLERBUTTONDOWN, button=X, instance_id=7))
+    assert k.consume().z_pressed
+
+
+def test_local_play_gives_each_player_their_own_controller(pads):
+    g, blue_pad = pads
+    red_pad = FakePad()
+    g.pads[9] = red_pad                            # connected second
+    blue = KeyboardInput(shared_pads=g, pad_slot=0)
+    red = KeyboardInput(shared_pads=g, pad_slot=1)
+    blue_pad.tilt(LX, 1.0)
+    red_pad.tilt(LX, -1.0)
+    g.handle_event(ev(pygame.CONTROLLERBUTTONDOWN, button=X, instance_id=9))   # Red presses Square
+    b, r = blue.consume(), red.consume()
+    assert b.move_x == 1 and r.move_x == -1
+    assert r.z_pressed and not b.z_pressed
 
 
 def test_controller_fields_cross_the_network():
