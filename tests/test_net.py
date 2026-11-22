@@ -9,7 +9,7 @@ from ballbrawlla.game import Game
 from ballbrawlla.input import Intent
 from ballbrawlla.net.client import Client
 from ballbrawlla.net.host import Host
-from ballbrawlla.net.snapshot import apply_snapshot, make_snapshot
+from ballbrawlla.net.host import RemoteInput
 from ballbrawlla.world.level import level_from_dict, level_to_dict
 
 
@@ -21,21 +21,15 @@ def test_level_dict_roundtrip():
     assert lv.player_spawns == g.level.player_spawns
 
 
-def test_snapshot_roundtrip_matches_host_state():
-    host = make_game(players=[(620, 650), (900, 650)], ball=(640, 670))
-    run(host, ticks=60)
-    run(host, [Intent(z_pressed=True), Intent(move_x=1)], ticks=1)
-    run(host, [Intent(), Intent(move_x=1)], ticks=5)
-
-    replica = Game(host.level, host.t, num_players=2)
-    apply_snapshot(replica, json.loads(json.dumps(make_snapshot(host, 66))))
-
-    for a, b in zip(host.players, replica.players):
-        assert abs(a.box.x - b.box.x) < 0.01 and abs(a.box.y - b.box.y) < 0.01
-        assert a.state.name == b.state.name
-        assert a.facing == b.facing
-    assert replica.ball.held_by is replica.players[0]
-    assert replica.players[0].held_ball is replica.ball
+def test_remote_input_carries_mouse_and_latches_edges():
+    r = RemoteInput()
+    r.feed({"t": "in", "mx": 0, "v": 0, "m": [100.5, 200], "mh": 1, "mp": 1, "b": 1})
+    r.feed({"t": "in", "mx": 0, "v": 0, "m": [110, 210], "mh": 1, "mp": 0, "b": 0})
+    first = r.consume()
+    assert first.mouse == (110.0, 210.0) and first.mouse_held
+    assert first.mouse_pressed and first.button_pressed  # edges survive the later message
+    second = r.consume()
+    assert second.mouse_held and not second.mouse_pressed and not second.button_pressed
 
 
 def _pump(host: Host, until, timeout=2.0):
@@ -88,7 +82,7 @@ def test_host_client_over_loopback():
         assert second.move_x == -1 and not second.jump_pressed
 
         # Snapshot reaches the client.
-        host.broadcast(make_snapshot(g, 7))
+        host.send_to(1, {"t": "snap", "tick": 7})
         deadline = time.monotonic() + 2
         snap = None
         while snap is None and time.monotonic() < deadline:

@@ -27,6 +27,9 @@ class Player:
         self.t = tuning
         self.pid = pid
         self.connected = True  # False for an empty network slot: not simulated, drawn dimmed
+        self.role: str | None = None  # gameplay role (QB / WR / DEF) when in a match
+        self.team: int | None = None
+        self.can_throw = True          # WR and Defender can't throw
         self.w = tuning.player_width
         self.h = tuning.player_height
         top_left = Vector2(spawn_center.x - self.w / 2, spawn_center.y - self.h / 2)
@@ -45,6 +48,10 @@ class Player:
         self.ball_trail: Sequence[Vector2] = ()  # host's recent Free-ball positions, set each tick
         self.aim_angle = 45.0          # degrees, 0 = right, 90 = up (full circle)
         self.aim_power = (tuning.power_min + tuning.power_max) / 2
+
+        # Feet position the last time this player stood on a platform (where a play
+        # restarts if they're tagged mid-air).
+        self.last_ground = Vector2(spawn_center.x, spawn_center.y + self.h / 2)
 
         self._solids: list[AABB] = []
         self.state: State = Airborne()
@@ -172,3 +179,5 @@ class Player:
         new_box = move_aabb(self.box, self.body.vel, dt, solids, thin)
         self.body.pos.update(new_box.x, new_box.y)
         self.contacts = probe_contacts(new_box, solids, thin)
+        if self.contacts.on_ground and self.state.name != "wall_cling":
+            self.last_ground = Vector2(new_box.center.x, new_box.bottom)
