@@ -20,3 +20,6 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: brute-force physics sweeps (about 9 s each). Skip with: pytest -m \"not slow\"",
+]

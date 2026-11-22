@@ -31,6 +31,12 @@ ABOVE_TOP_TOL = 1e-6  # px; tolerance for "mover bottom is at/above a thin top"
 MAX_AABB_STEP = 8.0  # px; keep below the thinnest platform to prevent tunnelling
 
 
+def _near_box(rects, box: AABB, margin: float) -> list:
+    """The rects that can touch `box` once it is grown by `margin` on every side (cheap float compares only)."""
+    x0, x1, y0, y1 = box.x - margin, box.x + box.w + margin, box.y - margin, box.y + box.h + margin
+    return [r for r in rects if r.x < x1 and r.x + r.w > x0 and r.y < y1 and r.y + r.h > y0]
+
+
 def move_aabb(
     box: AABB,
     vel: Vector2,
@@ -42,10 +48,12 @@ def move_aabb(
     on any axis that hits a solid (mutates `vel`). Returns the new box.
     `thin` platforms only stop downward motion that started at/above their top.
     Large moves are split into sub-steps of at most MAX_AABB_STEP px."""
-    solids = list(solids)
-    thin = list(thin)
     travel = max(abs(vel.x), abs(vel.y)) * dt
     steps = max(1, math.ceil(travel / MAX_AABB_STEP))
+    # Broad phase: only platforms within this move's reach (a collision only ever stops the box sooner).
+    reach = max(abs(vel.x), abs(vel.y)) * dt + 2
+    solids = _near_box(solids, box, reach)
+    thin = _near_box(thin, box, reach)
     for _ in range(steps):
         box = _move_aabb_step(box, vel, dt / steps, solids, thin)
     return box
@@ -89,8 +97,8 @@ def probe_contacts(
     """Detect touching solids by nudging the box 1px in each direction.
     Thin platforms only count for `on_ground`, when the box bottom rests on
     the top edge (within ABOVE_TOP_TOL) and overlaps it horizontally."""
-    solids = list(solids)
-    thin = list(thin)
+    solids = _near_box(solids, box, 2)
+    thin = _near_box(thin, box, 2)
 
     def touching(dx: float, dy: float) -> bool:
         probe = box.shifted(dx, dy)
