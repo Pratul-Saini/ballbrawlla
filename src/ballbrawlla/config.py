@@ -47,8 +47,11 @@ class Tuning:
     # --- Ball ---
     ball_radius: float = 12
     ball_gravity: float = 2200        # starts equal to player gravity per design doc
-    ball_restitution: float = 0.75    # 1.0 = no energy loss on bounce
-    ball_bounce_friction: float = 0.1  # fraction of tangential speed lost per impact
+    # Platforms and walls absorb a lot of the ball's energy on impact:
+    # a head-on hit keeps 0.4 of its speed (16% of its energy), and a glancing
+    # hit loses 35% of its speed along the surface.
+    ball_restitution: float = 0.4     # fraction of speed into the surface kept (1.0 = no loss)
+    ball_bounce_friction: float = 0.35  # fraction of speed along the surface lost per impact
     ball_rest_speed: float = 40       # impacts slower than this stop instead of bouncing
     ball_rolling_drag: float = 1.5    # per-second horizontal decay while resting on a floor
 

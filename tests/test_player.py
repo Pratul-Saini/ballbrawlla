@@ -1,3 +1,5 @@
+import pytest
+
 from conftest import make_game, run
 
 from ballbrawlla.input import Intent
@@ -114,3 +116,31 @@ def test_ball_bounces_and_settles():
     assert peak_vy[1] < peak_vy[0], "bounces lose energy"
     assert b.resting
     assert abs(b.pos.y - (720 - 32 - b.radius)) < 1
+
+
+def test_wall_absorbs_most_of_the_balls_energy():
+    from ballbrawlla.physics.vec import Vector2
+
+    g = make_game(ball=(640, 400), ball_gravity=0)
+    v0 = 1000.0
+    g.ball.release(Vector2(1200, 400), Vector2(v0, 0))  # straight at the right wall
+    for _ in range(60):
+        run(g)
+        if g.ball.vel.x < 0:
+            break
+    assert g.ball.vel.x < 0, "ball should bounce back off the wall"
+    kept = g.ball.vel.length() / v0
+    assert kept == pytest.approx(g.t.ball_restitution)
+    assert kept <= 0.5  # most of the energy is gone (energy kept = kept**2)
+
+
+def test_glancing_wall_hit_also_loses_speed_along_the_wall():
+    from ballbrawlla.physics.vec import Vector2
+
+    g = make_game(ball=(640, 400), ball_gravity=0)
+    g.ball.release(Vector2(1200, 400), Vector2(600, -600))
+    for _ in range(60):
+        run(g)
+        if g.ball.vel.x < 0:
+            break
+    assert g.ball.vel.y == pytest.approx(-600 * (1 - g.t.ball_bounce_friction))

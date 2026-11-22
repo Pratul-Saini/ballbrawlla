@@ -45,6 +45,9 @@ class Level:
     player_spawns: list[Vector2] = field(default_factory=lambda: [Vector2(100, 100)])
     ball_spawn: Vector2 = field(default_factory=lambda: Vector2(200, 100))  # ball center
     name: str = "untitled"
+    # Pixels per yard when this level is used as a football field. None = use
+    # Tuning.yard_px. Bigger fields use a bigger yard (the game is always 100 yards).
+    yard_px: float | None = None
 
     def __post_init__(self) -> None:
         t, w, h = self.wall_thickness, self.width, self.height
@@ -77,12 +80,13 @@ def level_from_dict(data: dict) -> Level:
         player_spawns=[Vector2(s) for s in spawns],
         ball_spawn=Vector2(data["ball_spawn"]),
         name=data.get("name", "untitled"),
+        yard_px=data.get("yard_px"),
     )
 
 
 def level_to_dict(level: Level) -> dict:
     """Inverse of level_from_dict (boundary walls are regenerated, so omitted)."""
-    return {
+    d = {
         "name": level.name,
         "width": level.width,
         "height": level.height,
@@ -91,6 +95,9 @@ def level_to_dict(level: Level) -> dict:
         "ball_spawn": [level.ball_spawn.x, level.ball_spawn.y],
         "platforms": [_platform_to_dict(p) for p in level.platforms if p.kind == "platform"],
     }
+    if level.yard_px is not None:
+        d["yard_px"] = level.yard_px
+    return d
 
 
 def _platform_to_dict(p: Platform) -> dict:

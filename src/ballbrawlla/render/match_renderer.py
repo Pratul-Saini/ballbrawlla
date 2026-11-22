@@ -26,19 +26,18 @@ from ballbrawlla.render.renderer import (
     THIN_FILL,
     TRAJ,
 )
+from ballbrawlla.render.field_markers import TEAM_COLORS, FieldMarkers
 from ballbrawlla.rules.field import Field
 from ballbrawlla.rules.teams import Team
 from ballbrawlla.world.level import Level
 
-TEAM_COLORS = {Team.LEFT: (80, 170, 255), Team.RIGHT: (255, 110, 110)}
 QB_REGION = (255, 220, 90)
-YARD_LINE = (44, 48, 58)
-GOAL_LINE = (200, 200, 210)
 BANNER = (255, 240, 180)
 DIM = (150, 155, 170)
 BUTTON = (60, 120, 80)
 BUTTON_EDGE = (150, 230, 170)
 MINIMAP_H = 40
+HUD_H = MINIMAP_H + 54  # dark band behind the minimap and the two HUD text lines
 AIM_RING_RADIUS = 60
 
 PLAY_CALL = "play_call"
@@ -81,6 +80,8 @@ class MatchRenderer:
         self.big = pygame.font.Font(None, 44)
         self.debug = False
         self.button_rect: pygame.Rect | None = None
+        self.markers = FieldMarkers(field)
+        self._hud_band: pygame.Surface | None = None
 
     # ------------------------------------------------------------ input helper
 
@@ -141,22 +142,7 @@ class MatchRenderer:
     # ------------------------------------------------------------ world
 
     def _draw_field(self) -> None:
-        f, lv = self.field, self.level
-        ez_w = self.t.end_zone_yards * self.t.yard_px
-        for team in Team:
-            x0 = f.goal_line_x(team) - (ez_w if team is Team.LEFT else 0)
-            surf = pygame.Surface((ez_w, lv.height), pygame.SRCALPHA)
-            surf.fill(_team_color(team, 28))
-            self.screen.blit(surf, self._w(x0, 0))
-        step = 10
-        for yards in range(0, int(self.t.field_yards) + 1, step):
-            x = f.x_at(Team.LEFT, yards)
-            color = GOAL_LINE if yards in (0, self.t.field_yards) else YARD_LINE
-            sx, _ = self._w(x, 0)
-            pygame.draw.line(self.screen, color, (sx, 0), (sx, self.screen.get_height()), 1)
-            label = int(min(yards, self.t.field_yards - yards))
-            if 0 < yards < self.t.field_yards:  # pinned just under the HUD text
-                self._text(str(label), (sx, MINIMAP_H + 52), DIM, self.small, center=True)
+        self.markers.draw(self.screen, self.camera.pos, pinned_label_y=HUD_H + 4)
 
     def _draw_platforms(self) -> None:
         for plat in self.level.platforms:
@@ -239,7 +225,7 @@ class MatchRenderer:
         x0, y0, w, h = 40, 6, vw - 80, MINIMAP_H
         sx, sy = w / self.level.width, h / self.level.height
         pygame.draw.rect(self.screen, (16, 17, 22), (x0, y0, w, h))
-        ez_w = self.t.end_zone_yards * self.t.yard_px
+        ez_w = self.field.end_zone_px
         for team in Team:
             gx = self.field.goal_line_x(team) - (ez_w if team is Team.LEFT else 0)
             pygame.draw.rect(self.screen, tuple(c // 3 for c in _team_color(team)),
@@ -268,6 +254,10 @@ class MatchRenderer:
 
     def _draw_hud(self, view: dict, fps: float, status: str) -> None:
         vw, vh = self.screen.get_size()
+        if self._hud_band is None or self._hud_band.get_width() != vw:
+            self._hud_band = pygame.Surface((vw, HUD_H), pygame.SRCALPHA)
+            self._hud_band.fill((16, 17, 22, 200))
+        self.screen.blit(self._hud_band, (0, 0))
         self._draw_minimap(view)
         me, off = Team(view["team"]), Team(view["offense"])
         score = view["score"]
@@ -329,20 +319,20 @@ class MatchRenderer:
             if mine_locked:
                 return head + "Locked in - waiting for the other side"
             if view["side"] == "defense":
-                return head + "Drag the Defender (or arrows) inside your zone - Z / button: lock in"
+                return head + "Drag the Defender (arrows / stick) inside your zone - Z / Square / button: lock in"
             if call["placing"]:
-                return head + "Drag the QB (or arrows) in the yellow zone - Z / button: confirm - X: lock in"
+                return head + "Drag the QB (arrows / stick) in the yellow zone - Z / Square / button: confirm - X / Circle: lock in"
             back = " - click QB / Z: move QB" if call["picks"] else ""
-            return head + "Hold mouse and point to aim (farther = more power), or arrows - X / button: lock in" + back
+            return head + "Aim: hold mouse and point (farther = more power), right stick, or arrows - X / Circle / button: lock in" + back
         if phase == "pre_throw":
             return f"THROW IN {timer:4.1f}s - get open (WR) / get in position (DEF)"
         if phase == "live":
             holder = view["ball"]["holder"]
             if holder is None:
-                return f"LOOSE BALL - dead in {timer:3.1f}s, Z to pick up" if timer is not None else "Ball in the air - Z to catch"
+                return f"LOOSE BALL - dead in {timer:3.1f}s, Z / Square to pick up" if timer is not None else "Ball in the air - Z / Square to catch"
             if holder == "WR":
-                return "WR has the ball: run to the end zone / DEF: Z to tag"
-            return "INTERCEPTION: DEF runs the other way / WR: Z to tag"
+                return "WR has the ball: run to the end zone / DEF: Z / Square to tag"
+            return "INTERCEPTION: DEF runs the other way / WR: Z / Square to tag"
         return ""
 
     def _draw_debug(self, view: dict, fps: float) -> None:
