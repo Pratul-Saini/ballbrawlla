@@ -49,9 +49,8 @@ const MIN_ZOOM := 0.4                      # local play: how far the shared came
 const FRAME_MARGIN := Vector2(260, 200)    # world px kept around the players when framing them
 const SHOW_ME_BOX := false                 # white box around the player you control (always shown if there is no art)
 const SHOW_TAG_RING := false               # green circle: how close an opponent must get to tag you
-const RUN_BOB := 2.0                       # world px the player bounces while running on the ground
-const RUN_BOB_SPEED := 0.42                # radians per tick
-const RUN_MIN_SPEED := 20.0                # |vx| above this counts as running
+const CLOCK_STALE := 1.0                   # s: an animation clock not drawn for this long is dropped (a new down, a left player)
+const RUN_MIN_SPEED := 20.0                # |vx| above this counts as running (which way he faces)
 
 var level
 var field
@@ -60,6 +59,10 @@ var sprites := PlayerSprites.new()
 var _fx_list: Array = []        # double-jump effects: {x, y, age} in world px
 var _walk := {}                  # play call: role -> {x, f}, to face the QB and defender the way they last moved
 var _prev_air := {}              # role -> [state, vy] last frame, to spot the second jump
+var _dt := 0.0                   # seconds since the last drawn frame: the animation clock runs on this, not on sim ticks
+var _clock_idle := {}            # animation clock key ("team:role") -> seconds since it was last drawn
+var _last_tick := -1             # tick of the last drawn view; going backwards means a new match
+var _call_x := {}                # play call: role -> x last frame, to tell walking from standing (no velocity in the call)
 var ci: CanvasItem
 var font: Font
 var size := Vector2(1280, 720)
@@ -194,7 +197,9 @@ func _rect_outline(r: Rect2, color: Color, width: float = 1.0) -> void:
 func draw(p_ci: CanvasItem, p_size: Vector2, view: Dictionary, fps: float, dt: float, status: String = "",
 		controls: String = "", invite: Dictionary = {}) -> void:
 	ci = p_ci
+	_dt = dt
 	_age_fx(dt)
+	_age_clocks(dt, int(view.get("tick", -1)))
 	size = p_size
 	if view.get("local", false):
 		frame(_focus_points(view), dt, hud_h)
@@ -310,27 +315,31 @@ func _draw_platforms() -> void:
 			ci.draw_rect(rect, PLATFORM)
 
 ## Draws one player. Returns where the ball goes (the near hand, in screen px), or Vector2.INF when drawn as a box.
-## `facing` is 1 or -1; `bob` is a vertical offset in world px (the run bounce).
+## `facing` is 1 or -1. `motion` is {state, vx, vy} (the engine's state name and velocity, px/s) and picks the animation
+## frame; the clock is kept per team and `label`.
 func _draw_figure(x: float, feet_y: float, team: int, label: String, outline_only: bool = false, me: bool = false,
-		p_h: float = -1.0, facing: int = 1, bob: float = 0.0) -> Vector2:
+		p_h: float = -1.0, facing: int = 1, motion: Dictionary = {}) -> Vector2:
 	var w: float = t.player_width
 	var h: float = p_h if p_h > 0.0 else t.player_height
 	var rect := _wrect(x - w / 2.0, feet_y - h, w, h)
 	var color := _team_color(team)
 	var hand := Vector2.INF
 	var top := rect.position.y        # top of what is drawn, so the label clears the taller sprite
-	var spr: Dictionary = {} if outline_only else sprites.get_sprite(team, facing, TEAM_COLORS[team])
+	var spr: Dictionary = {}
+	if not outline_only and sprites.available:
+		var key := "%d:%s" % [team, label]
+		_clock_idle[key] = 0.0
+		spr = sprites.get_frame(key, team, facing, str(motion.get("state", "grounded")), float(motion.get("vx", 0.0)),
+				float(motion.get("vy", 0.0)), _dt)
 	if outline_only:
 		_rect_outline(rect.grow(-1.0), color, 2.0)
 	elif spr.is_empty():
 		ci.draw_rect(rect, color)
 	else:
-		var src: Rect2 = spr["src"]
-		var k: float = h / src.size.y * PlayerSprites.VISUAL_SCALE * zoom        # screen px per art pixel
-		var dst := Rect2(Vector2(roundf(rect.get_center().x - src.size.x * k / 2.0),
-				roundf(rect.end.y - src.size.y * k - bob * zoom)), src.size * k)
+		var k: float = PlayerSprites.art_scale(h, zoom)        # screen px per art pixel
+		var dst: Rect2 = PlayerSprites.dest_rect(spr, rect.get_center().x, rect.end.y, k)
 		ci.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-		ci.draw_texture_rect_region(spr["tex"], dst, src)
+		ci.draw_texture_rect_region(spr["tex"], dst, spr["src"])
 		hand = dst.position + (spr["hand"] as Vector2) * dst.size
 		top = minf(top, dst.position.y)
 	if me and (SHOW_ME_BOX or hand == Vector2.INF):
@@ -375,16 +384,25 @@ func _draw_play_call(view: Dictionary) -> void:
 	var qb: Array = call["qb"]
 	var placing: bool = call["placing"] and not call["off_locked"]
 	var qb_f: int = PlayerSprites.track_facing(_walk, "QB", float(qb[0]), Teams.attack_dir(off))
-	_draw_figure(qb[0], qb[1], off, "QB", false, placing and me_off, call.get("qb_h", -1.0), qb_f)
+	_draw_figure(qb[0], qb[1], off, "QB", false, placing and me_off, call.get("qb_h", -1.0), qb_f, _call_motion("QB", qb[0]))
 	if placing:
 		_draw_spot_marker(call["qb_ok"], qb, call.get("qb_h", -1.0))
 	if call.has("def"):
 		var def_f: int = PlayerSprites.track_facing(_walk, "DEF", float(call["def"][0]), Teams.attack_dir(dfn))
-		_draw_figure(call["def"][0], call["def"][1], dfn, "DEF", call["def_locked"], true, call.get("def_h", -1.0), def_f)
+		_draw_figure(call["def"][0], call["def"][1], dfn, "DEF", call["def_locked"], true, call.get("def_h", -1.0), def_f,
+				_call_motion("DEF", call["def"][0]))
 		if not call["def_locked"]:
 			_draw_spot_marker(call["def_ok"], call["def"], call.get("def_h", -1.0))
 	if call.has("aim") and not call["placing"]:
 		_draw_aim(qb[0], qb[1] - call.get("qb_h", h) / 2.0, call["aim"][0], call["aim"][1])
+
+## The play call gives a position, not a velocity: walking while the spot moves, standing otherwise.
+func _call_motion(role: String, x: float) -> Dictionary:
+	var vx := 0.0
+	if _call_x.has(role) and _dt > 0.0 and absf(x - float(_call_x[role])) < 60.0:
+		vx = (x - float(_call_x[role])) / _dt
+	_call_x[role] = x
+	return {"state": "grounded", "vx": vx, "vy": 0.0}
 
 ## Green bar under the player if it's standing somewhere it can lock in; otherwise a red box.
 func _draw_spot_marker(ok: bool, feet: Array, p_h: float) -> void:
@@ -400,6 +418,20 @@ func _draw_spot_marker(ok: bool, feet: Array, p_h: float) -> void:
 func _is_mine(view: Dictionary, team: int, role: String) -> bool:
 	return role != "QB" and (bool(view.get("local", false)) or team == view["team"])
 
+## Animation clocks are kept per team and role. A clock nobody drew for CLOCK_STALE seconds is forgotten, and so are
+## all of them when the tick counter runs backwards (a new match), so nobody inherits an old clock.
+func _age_clocks(dt: float, tick: int) -> void:
+	if tick >= 0 and tick < _last_tick:
+		for k in _clock_idle:
+			sprites.forget(k)
+		_clock_idle.clear()
+	if tick >= 0:
+		_last_tick = tick
+	for k in _clock_idle.keys():
+		_clock_idle[k] = float(_clock_idle[k]) + dt
+		if _clock_idle[k] > CLOCK_STALE:
+			sprites.forget(k)
+			_clock_idle.erase(k)
 ## Fade out finished effects.
 func _age_fx(dt: float) -> void:
 	for e in _fx_list:
@@ -426,11 +458,11 @@ func _draw_actors(view: Dictionary) -> void:
 		var feet_x: float = a["x"] + a["w"] / 2.0
 		var me := _is_mine(view, a["team"], a["role"])
 		var running: bool = a["s"] == "grounded" and absf(float(a["vx"])) > RUN_MIN_SPEED
-		var bob: float = absf(sin(float(view["tick"]) * RUN_BOB_SPEED)) * RUN_BOB if running else 0.0
 		var facing: int = int(a["f"])
 		if running:
 			facing = 1 if float(a["vx"]) > 0.0 else -1
-		var hand: Vector2 = _draw_figure(feet_x, a["y"] + a["h"], a["team"], a["role"], false, me, -1.0, facing, bob)
+		var hand: Vector2 = _draw_figure(feet_x, a["y"] + a["h"], a["team"], a["role"], false, me, -1.0, facing,
+				{"state": a["s"], "vx": float(a["vx"]), "vy": float(a["vy"])})
 		if hand != Vector2.INF:
 			hands[a["role"]] = hand
 		if me and SHOW_TAG_RING:
