@@ -3,9 +3,12 @@ extends RefCounted
 ##
 ##     Grounded --Up--> Airborne --touch wall + press into it--> WallCling
 ##        |  ^             ^  |                                     |
-##   Down |  | release     |  +--land--> Grounded       press away / lose wall
-##        v  |             +--------------------------------------+
+##   Down |  | release     |  +--land--> Grounded   Up+away (wall jump) / away (drop)
+##        v  |             +--------------------------------------+   / lose wall
 ##     Crouch / Slide
+##
+##     Sticking to a wall gives one jump (wall_jumps): hop up it (Up), wall-jump (Up + away),
+##     or drop off (away) and jump once in the air. Walls can't be climbed.
 ##     Grounded/Crouch --Z (holding ball)--> Aiming --X throw / Z cancel--> Grounded
 ##
 ## Each state's update() runs before physics for the tick. It sets velocity and returns a new State to transition
@@ -28,6 +31,14 @@ class State:
 	func _jump(p, speed: float) -> void:
 		p.body.vy = -speed
 		p.jump_cut_ready = true
+	## Kick off the wall on `side` (-1 left, +1 right).
+	func _wall_jump(p, side: int) -> void:
+		p.body.vx = -side * p.t.wall_jump_x
+		p.body.vy = -p.t.wall_jump_y
+		p.control_lock = p.t.wall_jump_control_lock
+		p.facing = -side
+		p.wall_jump_grace = 0.0
+		p.jumps_left = 0   # that was the wall's one jump
 	func _face(p, move_x: int) -> void:
 		if move_x != 0:
 			p.facing = move_x
@@ -43,6 +54,7 @@ class Grounded extends State:
 	func enter(p) -> void:
 		p.jumps_left = p.t.air_jumps
 		p.control_lock = 0.0
+		p.wall_jump_grace = 0.0
 		p.last_wall = null   # back on the ground: any wall can be grabbed again
 	func update(p, intent, _dt: float):
 		if not p.contacts.on_ground:
@@ -65,6 +77,12 @@ class Airborne extends State:
 	func update(p, intent, dt: float):
 		if p.contacts.on_ground and p.body.vy >= 0.0:
 			return Grounded.new()
+		# Dropped off a wall a moment ago: Up now is a late "Up + away", a wall jump.
+		if p.wall_jump_grace > 0.0:
+			p.wall_jump_grace -= dt
+			if intent.jump_pressed and p.jumps_left > 0:
+				_wall_jump(p, p.wall_jump_side)
+				return null
 		if p.control_lock > 0.0:
 			p.control_lock -= dt
 		else:
@@ -89,6 +107,7 @@ class Airborne extends State:
 
 class WallCling extends State:
 	var side: int   # -1 wall on the left, +1 wall on the right
+	var hop_timer := 0.0   # just hopped: pressing away now is a late "Up + away"
 	func _init(s: int = -1) -> void:
 		state_name = "wall_cling"
 		side = s
@@ -96,25 +115,32 @@ class WallCling extends State:
 		p.last_wall = p.touching_wall(side)
 		p.body.vx = 0.0   # stick
 		p.body.vy = 0.0
-		p.jumps_left = p.t.air_jumps
+		p.jumps_left = p.t.wall_jumps   # one jump from the wall, however you use it
 		p.jump_cut_ready = false
+		p.wall_jump_grace = 0.0
 		p.facing = -side   # face away from the wall
-	func update(p, intent, _dt: float):
+	func update(p, intent, dt: float):
 		if p.contacts.on_ground:
 			return Grounded.new()
 		var touching: bool = p.contacts.wall_left if side < 0 else p.contacts.wall_right
 		if not touching:
 			return Airborne.new()
 		p.body.vx = 0.0
-		if intent.move_x == -side:   # press away: wall jump
-			p.body.vx = -side * p.t.wall_jump_x
-			p.body.vy = -p.t.wall_jump_y
-			p.control_lock = p.t.wall_jump_control_lock
-			p.facing = -side
+		hop_timer = maxf(0.0, hop_timer - dt)
+		var away: bool = intent.move_x == -side
+		if away and ((intent.jump_pressed and p.jumps_left > 0) or hop_timer > 0.0):
+			_wall_jump(p, side)   # Up + away (or a hop a moment ago): wall jump
 			return Airborne.new()
-		if intent.jump_pressed:   # hop up the wall
+		if away:   # away alone: let go and drift off, no upward kick; the jump is kept
+			p.body.vx = -side * p.air_speed()
+			p.wall_jump_grace = p.t.wall_jump_grace if p.jumps_left > 0 else 0.0
+			p.wall_jump_side = side
+			return Airborne.new()
+		if intent.jump_pressed and p.jumps_left > 0:   # Up alone: hop up the wall
+			p.jumps_left -= 1
 			_jump(p, p.t.wall_climb_speed)
 			p.jump_cut_ready = false
+			hop_timer = p.t.wall_jump_grace
 		if intent.move_x == side and p.t.wall_hold_sticks and p.body.vy > 0.0:
 			p.body.vy = 0.0
 		return null

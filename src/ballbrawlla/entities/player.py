@@ -40,6 +40,9 @@ class Player:
         self.jumps_left = tuning.air_jumps
         self.jump_cut_ready = False   # True after a jump until Up is released / apex
         self.control_lock = 0.0       # seconds of ignored air control (after wall jump)
+        # Just dropped off a wall (away without Up): Up in the next moment still wall-jumps.
+        self.wall_jump_grace = 0.0
+        self.wall_jump_side = 0       # the side the wall was on
 
         self.held_ball: Ball | None = None
         # The wall I last clung to. I can't cling to it again until I've clung to a

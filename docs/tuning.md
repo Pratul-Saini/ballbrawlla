@@ -49,6 +49,8 @@ In network play the host's `Tuning` is sent to the joiner, so both sides use the
 | `wall_jump_y` | 720 | upward speed of a wall jump |
 | `wall_jump_control_lock` | 0.18 | seconds of ignored air steering after a wall jump |
 | `wall_climb_speed` | 520 | Up while clinging: upward hop speed |
+| `wall_jumps` | 1 | jumps a cling gives: a hop up it, a wall jump, or one air jump after dropping off |
+| `wall_jump_grace` | 0.1 | seconds in which Up and away still count as pressed together |
 
 ## Ball
 | Field | Default | Meaning |

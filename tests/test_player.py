@@ -5,6 +5,7 @@ from conftest import make_game, run
 from ballbrawlla.input import Intent
 
 LEFT_WALL_X = 32  # inner face of the generated left boundary
+TICK_G = 2200 / 120 + 1  # one tick of gravity (px/s), applied in the same step
 
 
 def test_player_falls_and_lands(settled):
@@ -63,18 +64,120 @@ def test_wall_cling_slides_slowly_and_wall_jumps():
     run(g, ticks=60)  # no input: slide down gradually
     assert p.state.name == "wall_cling"
     assert 0 < p.vel.y <= g.t.wall_slide_max_speed
-    run(g, Intent(move_x=1))  # press away: wall jump
+    run(g, Intent(move_x=1, jump_pressed=True, vertical=1))  # Up + away: wall jump
     assert p.state.name == "airborne"
-    assert p.vel.x > 0 and p.vel.y < 0
+    assert p.vel.x > 0 and p.vel.y == pytest.approx(-g.t.wall_jump_y, abs=TICK_G)
 
 
-def test_up_on_wall_climbs():
+def test_up_on_wall_hops_once_then_slides_down():
     g = make_game(player=(120, 650))
     run(g, ticks=60)
     _cling_left(g)
+    p = g.player
     run(g, Intent(jump_pressed=True, vertical=1))
-    assert g.player.state.name == "wall_cling"
-    assert g.player.vel.y < 0
+    assert p.state.name == "wall_cling"
+    assert p.vel.y == pytest.approx(-g.t.wall_climb_speed, abs=TICK_G)
+    run(g, Intent(vertical=1), ticks=40)                  # past the top of the hop
+    assert p.vel.y > 0
+    run(g, Intent(jump_pressed=True, vertical=1))         # a second Up does nothing
+    assert p.state.name == "wall_cling" and p.vel.y > 0
+    for _ in range(300):                                  # ...and you slide all the way down
+        run(g, Intent(vertical=1))
+        if p.state.name == "grounded":
+            break
+    assert p.state.name == "grounded"
+
+
+def test_away_alone_drops_off_the_wall_without_a_kick():
+    g = make_game(player=(120, 650))
+    run(g, ticks=60)
+    _cling_left(g)
+    p = g.player
+    run(g, ticks=20)                                      # sliding
+    run(g, Intent(move_x=1))
+    assert p.state.name == "airborne"
+    assert p.vel.x == g.t.air_speed and p.vel.y >= 0
+    assert p.control_lock == 0
+
+
+def test_up_just_after_dropping_still_wall_jumps():
+    """Away a tick before Up is still Up + away."""
+    g = make_game(player=(120, 650))
+    run(g, ticks=60)
+    _cling_left(g)
+    p = g.player
+    run(g, ticks=20)
+    run(g, Intent(move_x=1), ticks=3)
+    run(g, Intent(move_x=1, jump_pressed=True, vertical=1))
+    assert p.vel.y == pytest.approx(-g.t.wall_jump_y, abs=TICK_G) and p.control_lock > 0
+
+
+def test_drop_off_then_jump_once_in_the_air():
+    g = make_game(player=(120, 650))
+    run(g, ticks=60)
+    _cling_left(g)
+    p = g.player
+    run(g, ticks=20)
+    run(g, Intent(move_x=1), ticks=int(g.t.wall_jump_grace * 120) + 2)
+    run(g, Intent(move_x=1, jump_pressed=True, vertical=1))   # the wall's one jump
+    assert p.state.name == "airborne"
+    assert p.vel.y == pytest.approx(-g.t.double_jump_speed, abs=TICK_G)
+    assert p.control_lock == 0                                # an air jump, not a wall jump
+    run(g, Intent(move_x=1, vertical=1), ticks=10)
+    vy = p.vel.y
+    run(g, Intent(move_x=1, jump_pressed=True, vertical=1))   # and only one
+    assert p.vel.y >= vy
+
+
+def test_hop_uses_the_walls_jump():
+    """Hop up, then drop off: nothing left to jump with."""
+    g = make_game(player=(120, 650))
+    run(g, ticks=60)
+    _cling_left(g)
+    p = g.player
+    run(g, Intent(jump_pressed=True, vertical=1))
+    run(g, Intent(vertical=1), ticks=40)
+    run(g, Intent(move_x=1))                                  # drop: no kick
+    assert p.state.name == "airborne" and p.vel.y >= 0
+    run(g, Intent(move_x=1), ticks=3)
+    vy = p.vel.y
+    run(g, Intent(move_x=1, jump_pressed=True, vertical=1))
+    assert p.vel.y >= vy
+
+
+def test_away_just_after_a_hop_is_a_wall_jump():
+    """Up a tick before away is still Up + away, not a hop and then a drop."""
+    g = make_game(player=(120, 650))
+    run(g, ticks=60)
+    _cling_left(g)
+    p = g.player
+    run(g, Intent(jump_pressed=True, vertical=1))
+    run(g, Intent(move_x=1, vertical=1))
+    assert p.state.name == "airborne"
+    assert p.vel.x > 0 and p.vel.y == pytest.approx(-g.t.wall_jump_y, abs=TICK_G)
+
+
+def test_no_double_jump_after_a_wall_jump():
+    g = make_game(player=(120, 650))
+    run(g, ticks=60)
+    _cling_left(g)
+    p = g.player
+    assert p.jumps_left == g.t.wall_jumps == 1
+    run(g, Intent(move_x=1, jump_pressed=True, vertical=1))
+    run(g, Intent(move_x=1, vertical=1), ticks=30)        # rising, well past the grace window
+    vy = p.vel.y
+    run(g, Intent(move_x=1, jump_pressed=True, vertical=1))
+    assert p.vel.y >= vy                                  # no new upward kick
+    assert p.jumps_left == 0
+
+
+def test_double_jump_comes_back_after_landing_from_a_wall():
+    g = make_game(player=(120, 650))
+    run(g, ticks=60)
+    _cling_left(g)
+    run(g, ticks=300)
+    assert g.player.state.name == "grounded"
+    assert g.player.jumps_left == g.t.air_jumps
 
 
 def test_pickup_aim_and_throw():

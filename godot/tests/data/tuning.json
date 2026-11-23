@@ -56,8 +56,10 @@
  "wall_gravity_scale": 0.3,
  "wall_hold_sticks": false,
  "wall_jump_control_lock": 0.18,
+ "wall_jump_grace": 0.1,
  "wall_jump_x": 380,
  "wall_jump_y": 720,
+ "wall_jumps": 1,
  "wall_slide_max_speed": 140,
  "yard_px": 24
 }
