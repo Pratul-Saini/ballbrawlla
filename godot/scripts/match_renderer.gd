@@ -9,6 +9,7 @@ extends RefCounted
 ## the canvas) so lines and text keep their pixel size at any zoom, as in the Python renderer.
 
 const Teams = preload("res://scripts/teams.gd")
+const PlayerSprites = preload("res://scripts/player_sprites.gd")
 
 static func c8(r: int, g: int, b: int, a: int = 255) -> Color:
 	return Color(r / 255.0, g / 255.0, b / 255.0, a / 255.0)
@@ -46,10 +47,16 @@ const MINIMAP_H := 40.0
 const AIM_RING_RADIUS := 60.0
 const MIN_ZOOM := 0.4                      # local play: how far the shared camera may zoom out
 const FRAME_MARGIN := Vector2(260, 200)    # world px kept around the players when framing them
+const RUN_BOB := 2.0                       # world px the player bounces while running on the ground
+const RUN_BOB_SPEED := 0.42                # radians per tick
+const RUN_MIN_SPEED := 20.0                # |vx| above this counts as running
 
 var level
 var field
 var t
+var sprites := PlayerSprites.new()
+var _fx_list: Array = []        # double-jump effects: {x, y, age} in world px
+var _prev_air := {}              # role -> [state, vy] last frame, to spot the second jump
 var ci: CanvasItem
 var font: Font
 var size := Vector2(1280, 720)
@@ -184,6 +191,7 @@ func _rect_outline(r: Rect2, color: Color, width: float = 1.0) -> void:
 func draw(p_ci: CanvasItem, p_size: Vector2, view: Dictionary, fps: float, dt: float, status: String = "",
 		controls: String = "", invite: Dictionary = {}) -> void:
 	ci = p_ci
+	_age_fx(dt)
 	size = p_size
 	if view.get("local", false):
 		frame(_focus_points(view), dt, hud_h)
@@ -298,19 +306,32 @@ func _draw_platforms() -> void:
 		else:
 			ci.draw_rect(rect, PLATFORM)
 
+## Draws one player. Returns where the ball goes (the near hand, in screen px), or Vector2.INF when drawn as a box.
+## `facing` is 1 or -1; `bob` is a vertical offset in world px (the run bounce).
 func _draw_figure(x: float, feet_y: float, team: int, label: String, outline_only: bool = false, me: bool = false,
-		p_h: float = -1.0) -> void:
+		p_h: float = -1.0, facing: int = 1, bob: float = 0.0) -> Vector2:
 	var w: float = t.player_width
 	var h: float = p_h if p_h > 0.0 else t.player_height
 	var rect := _wrect(x - w / 2.0, feet_y - h, w, h)
 	var color := _team_color(team)
+	var hand := Vector2.INF
+	var spr: Dictionary = {} if outline_only else sprites.get_sprite(team, facing, TEAM_COLORS[team])
 	if outline_only:
 		_rect_outline(rect.grow(-1.0), color, 2.0)
-	else:
+	elif spr.is_empty():
 		ci.draw_rect(rect, color)
+	else:
+		var src: Rect2 = spr["src"]
+		var k: float = h / src.size.y * PlayerSprites.VISUAL_SCALE * zoom        # screen px per art pixel
+		var dst := Rect2(Vector2(roundf(rect.get_center().x - src.size.x * k / 2.0),
+				roundf(rect.end.y - src.size.y * k - bob * zoom)), src.size * k)
+		ci.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+		ci.draw_texture_rect_region(spr["tex"], dst, src)
+		hand = dst.position + (spr["hand"] as Vector2) * dst.size
 	if me:
 		_rect_outline(rect.grow(2.0), Color.WHITE, 1.0)
 	_text(label, Vector2(rect.get_center().x, rect.position.y - 16.0), color, 14, true)
+	return hand
 
 func _draw_aim(cx: float, cy: float, angle: float, power: float) -> void:
 	var c := _w(cx, cy)
@@ -372,11 +393,38 @@ func _draw_spot_marker(ok: bool, feet: Array, p_h: float) -> void:
 func _is_mine(view: Dictionary, team: int, role: String) -> bool:
 	return role != "QB" and (bool(view.get("local", false)) or team == view["team"])
 
+## Fade out finished effects.
+func _age_fx(dt: float) -> void:
+	for e in _fx_list:
+		e["age"] += dt
+	_fx_list = _fx_list.filter(func(e): return e["age"] < PlayerSprites.FX_SECONDS)
+
+## A second jump shows up as a sudden upward speed while already in the air (no change to the network view needed).
+func _spot_double_jumps(view: Dictionary) -> void:
+	var jump_v: float = float(t.double_jump_speed)
+	for a in view["actors"]:
+		var prev = _prev_air.get(a["role"])
+		var vy: float = float(a["vy"])
+		if prev != null and a["s"] == "airborne" and prev[0] == "airborne" and prev[1] > -jump_v * 0.5 and vy <= -jump_v * 0.9:
+			_fx_list.append({"x": a["x"] + a["w"] / 2.0, "y": a["y"] + a["h"], "age": 0.0})
+		_prev_air[a["role"]] = [a["s"], vy]
+
 func _draw_actors(view: Dictionary) -> void:
+	_spot_double_jumps(view)
+	for e in _fx_list:
+		sprites.draw_fx(ci, _w(e["x"], e["y"]), e["age"], PlayerSprites.FX_SCALE * zoom)
+	var hands := {}   # role -> screen position of the near hand
 	for a in view["actors"]:
 		var feet_x: float = a["x"] + a["w"] / 2.0
 		var me := _is_mine(view, a["team"], a["role"])
-		_draw_figure(feet_x, a["y"] + a["h"], a["team"], a["role"], false, me)
+		var running: bool = a["s"] == "grounded" and absf(float(a["vx"])) > RUN_MIN_SPEED
+		var bob: float = absf(sin(float(view["tick"]) * RUN_BOB_SPEED)) * RUN_BOB if running else 0.0
+		var facing: int = int(a["f"])
+		if running:
+			facing = 1 if float(a["vx"]) > 0.0 else -1
+		var hand: Vector2 = _draw_figure(feet_x, a["y"] + a["h"], a["team"], a["role"], false, me, -1.0, facing, bob)
+		if hand != Vector2.INF:
+			hands[a["role"]] = hand
 		if me:
 			ci.draw_arc(_w(feet_x, a["y"] + a["h"] / 2.0), maxf(4.0, t.tag_radius * zoom), 0.0, TAU, 40,
 					c8(90, 200, 120), 1.0)
@@ -384,7 +432,15 @@ func _draw_actors(view: Dictionary) -> void:
 		var qb: Dictionary = view["actors"][0]
 		_draw_aim(qb["x"] + qb["w"] / 2.0, qb["y"] + qb["h"] / 2.0, view["aim"][0], view["aim"][1])
 	var b: Dictionary = view["ball"]
-	ci.draw_circle(_w(b["x"], b["y"]), maxf(3.0, t.ball_radius * zoom), BALL)
+	var holder = b.get("holder")
+	if holder != null and hands.has(holder):
+		_draw_held_ball(hands[holder])
+	else:
+		ci.draw_circle(_w(b["x"], b["y"]), maxf(3.0, t.ball_radius * zoom), BALL)
+
+## A small football carried in the hand.
+func _draw_held_ball(at: Vector2) -> void:
+	PlayerSprites.draw_football(ci, at, maxf(4.0, t.ball_radius * zoom * 1.5), BALL)
 
 # ------------------------------------------------------------ HUD
 
