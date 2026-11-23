@@ -21,6 +21,7 @@ class Intent:
     jump_pressed: bool = False  # Up pressed this tick
     z_pressed: bool = False     # pick up / tag / confirm spot / enter or cancel aim
     x_pressed: bool = False     # throw / lock in the play call
+    slide_pressed: bool = False  # Circle (controller): start a slide, or cancel one in progress
     # Mouse (play call). Position is in world coordinates.
     mouse: tuple[float, float] | None = None
     mouse_held: bool = False      # left button down (and not started on the HUD button)
@@ -128,6 +129,7 @@ class KeyboardInput:
             jump_pressed=k.up in self._pressed or edges.jump,
             z_pressed=k.grab in self._pressed or edges.grab,
             x_pressed=k.throw in self._pressed or edges.throw,
+            slide_pressed=edges.slide,
             jump_held=pad.jump_held,
             aim_stick=pad.aim_stick,
             mouse=mouse,

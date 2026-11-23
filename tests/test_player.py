@@ -45,6 +45,26 @@ def test_crouch_and_slide(settled):
     assert p.vel.x > settled.t.run_speed
 
 
+def test_circle_starts_a_slide_and_circle_again_cancels_it(settled):
+    p = settled.player
+    run(settled, Intent(move_x=1), ticks=5)                       # running right
+    assert p.state.name == "grounded" and p.facing == 1
+    run(settled, Intent(move_x=1, slide_pressed=True))           # Circle: slide
+    assert p.state.name == "slide" and p.vel.x > settled.t.run_speed
+    run(settled, Intent(move_x=1), ticks=3)                       # keep holding right: still sliding
+    assert p.state.name == "slide"
+    run(settled, Intent(move_x=1, slide_pressed=True))           # Circle again: cancel back to running
+    assert p.state.name == "grounded" and p.h == settled.t.player_height
+
+
+def test_circle_slides_in_the_facing_direction_when_standing_still(settled):
+    p = settled.player
+    run(settled, Intent(move_x=-1), ticks=5)                      # face left
+    assert p.facing == -1
+    run(settled, Intent(slide_pressed=True))                      # Circle with no direction held
+    assert p.state.name == "slide" and p.vel.x < 0                # slides the way it faces
+
+
 def _cling_left(g):
     # Jump, drift left into the boundary wall and hold into it.
     run(g, Intent(jump_pressed=True, vertical=1))

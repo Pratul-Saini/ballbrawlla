@@ -107,6 +107,16 @@ def test_face_buttons_map_to_jump_grab_throw(pads):
     assert not (e.jump or e.grab or e.throw)  # edges are one-shot
 
 
+def test_circle_fires_slide_but_the_other_throw_buttons_do_not(pads):
+    g, _ = pads
+    g.handle_event(ev(pygame.CONTROLLERBUTTONDOWN, button=B, instance_id=7))   # Circle
+    e = g.consume_edges()
+    assert e.slide and e.throw                                                 # Circle both slides and throws
+    g.handle_event(ev(pygame.CONTROLLERBUTTONDOWN, button=pygame.CONTROLLER_BUTTON_RIGHTSHOULDER, instance_id=7))
+    e = g.consume_edges()
+    assert e.throw and not e.slide                                             # R1 throws only
+
+
 def test_r1_and_r2_also_throw_and_r2_fires_once_per_pull(pads):
     g, _ = pads
     g.handle_event(ev(pygame.CONTROLLERBUTTONDOWN, button=pygame.CONTROLLER_BUTTON_RIGHTSHOULDER, instance_id=7))

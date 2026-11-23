@@ -4,7 +4,8 @@ extends RefCounted
 ##
 ## Keyboard sets:  DEFAULT arrows + Z (catch) + X (throw)   BLUE  WASD + F + G   RED  arrows + . + /
 ## Controller (SDL layout, so a DualSense works):  left stick / D-pad move, Cross jump, Square catch,
-## Circle or R1 or R2 throw, right stick aims, Options restart, Create or touchpad debug.
+## Circle slide (press again to cancel), Circle or R1 or R2 throw / lock in, right stick aims,
+## Options restart, Create or touchpad debug.
 
 const Intent = preload("res://scripts/intent.gd")
 
@@ -26,6 +27,7 @@ var _pressed := {}               # keycodes pressed since the last consume()
 var _pad_jump := false
 var _pad_grab := false
 var _pad_throw := false
+var _pad_slide := false
 var _r2_down := {}
 var _mouse_pressed := false
 var _button_pressed := false
@@ -74,6 +76,8 @@ func handle_event(event: InputEvent, button_hit: Callable = Callable()) -> Strin
 			JOY_BUTTON_B, JOY_BUTTON_RIGHT_SHOULDER: _pad_throw = true        # Circle, R1
 			JOY_BUTTON_START: return "restart"                                # Options
 			JOY_BUTTON_BACK, JOY_BUTTON_TOUCHPAD: return "debug"              # Create, touchpad
+		if event.button_index == JOY_BUTTON_B:   # Circle also starts/cancels a slide
+			_pad_slide = true
 	elif event is InputEventJoypadMotion and event.axis == JOY_AXIS_TRIGGER_RIGHT and _devices().has(event.device):
 		var down: bool = event.axis_value >= TRIGGER_THRESHOLD
 		if down and not _r2_down.get(event.device, false):
@@ -119,6 +123,7 @@ func consume(viewport: Viewport, cam_pos: Vector2 = Vector2.ZERO, zoom: float = 
 	i.jump_pressed = _pressed.has(keys["up"]) or _pad_jump
 	i.z_pressed = _pressed.has(keys["grab"]) or _pad_grab
 	i.x_pressed = _pressed.has(keys["throw"]) or _pad_throw
+	i.slide_pressed = _pad_slide
 	i.jump_held = pad["jump_held"]
 	i.aim_stick = pad["aim_stick"]
 	if use_mouse and DisplayServer.window_is_focused():
@@ -131,6 +136,7 @@ func consume(viewport: Viewport, cam_pos: Vector2 = Vector2.ZERO, zoom: float = 
 	_pad_jump = false
 	_pad_grab = false
 	_pad_throw = false
+	_pad_slide = false
 	_mouse_pressed = false
 	_button_pressed = false
 	return i

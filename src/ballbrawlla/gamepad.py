@@ -13,7 +13,9 @@ player, alongside the keyboard and mouse. Pads can be plugged in at any time.
     Cross                jump                            Up
     Square               catch / pick up / tag,          Z
                          confirm QB spot
-    Circle or R1 or R2   throw (sandbox) / lock in       X
+    Circle               slide, or cancel a slide;       (hold Down to slide)
+                         throw (sandbox) / lock in       X
+    R1 or R2             throw (sandbox) / lock in        X
     Right stick          point the aim (play call and    mouse
                          sandbox aiming)
     Options              new match (practice/host)       R
@@ -38,6 +40,7 @@ BUTTON_TOUCHPAD = 20  # SDL_CONTROLLER_BUTTON_TOUCHPAD (not exposed by name in p
 JUMP_BUTTONS = {pygame.CONTROLLER_BUTTON_A}                          # Cross
 GRAB_BUTTONS = {pygame.CONTROLLER_BUTTON_X}                          # Square
 THROW_BUTTONS = {pygame.CONTROLLER_BUTTON_B, pygame.CONTROLLER_BUTTON_RIGHTSHOULDER}  # Circle, R1
+SLIDE_BUTTONS = {pygame.CONTROLLER_BUTTON_B}                         # Circle: slide (and cancel a slide)
 RESTART_BUTTONS = {pygame.CONTROLLER_BUTTON_START}                   # Options
 DEBUG_BUTTONS = {pygame.CONTROLLER_BUTTON_BACK, BUTTON_TOUCHPAD}     # Create, touchpad
 
@@ -57,6 +60,7 @@ class PadEdges:
     jump: bool = False
     grab: bool = False
     throw: bool = False
+    slide: bool = False
 
 
 def _axis(pad, axis: int) -> float:
@@ -115,6 +119,8 @@ class Gamepads:
                 return "restart"
             elif b in DEBUG_BUTTONS:
                 return "debug"
+            if b in SLIDE_BUTTONS:        # Circle also starts/cancels a slide (its throw role is unused mid-run)
+                edges.slide = True
         elif event.type == pygame.CONTROLLERAXISMOTION and event.axis == pygame.CONTROLLER_AXIS_TRIGGERRIGHT:
             down = event.value / AXIS_MAX >= TRIGGER_THRESHOLD
             if down and not self._r2_down.get(event.instance_id, False):
@@ -136,6 +142,7 @@ class Gamepads:
                 out.jump |= e.jump
                 out.grab |= e.grab
                 out.throw |= e.throw
+                out.slide |= e.slide
         return out
 
     # ------------------------------------------------------------ held state

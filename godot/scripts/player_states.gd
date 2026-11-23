@@ -67,6 +67,8 @@ class Grounded extends State:
 		if intent.jump_pressed:
 			_jump(p, p.t.jump_speed)
 			return Airborne.new()
+		if intent.slide_pressed and p.t.slide_enabled:   # Circle: slide in the facing direction
+			return Slide.new()
 		if intent.down_held():
 			return Slide.new() if (intent.move_x != 0 and p.t.slide_enabled) else Crouch.new()
 		return null
@@ -185,6 +187,8 @@ class Slide extends State:
 	func update(p, intent, dt: float):
 		if not p.contacts.on_ground:
 			return Airborne.new()
+		if intent.slide_pressed:            # Circle again cancels the slide, back to running
+			return Grounded.new()
 		timer -= dt
 		p.body.vx *= maxf(0.0, 1.0 - p.t.slide_friction * dt)
 		if intent.jump_pressed and p.can_stand():

@@ -9,6 +9,9 @@
     Sticking to a wall gives one jump (wall_jumps): hop up it (Up), wall-jump (Up + away),
     or drop off (away) and jump once in the air. Walls can't be climbed.
 
+    A slide also starts from Grounded on Circle (slide_pressed); pressing Circle again while
+    sliding cancels it back to Grounded (running).
+
     Grounded/Crouch --Z (holding ball)--> Aiming --X throw / Z cancel--> Grounded
 
 Each state's update() runs *before* physics for the tick. It sets velocity and
@@ -93,6 +96,8 @@ class Grounded(State):
         if intent.jump_pressed:
             _jump(p, p.t.jump_speed)
             return Airborne()
+        if intent.slide_pressed and p.t.slide_enabled:   # Circle: slide in the facing direction
+            return Slide()
         if intent.down_held:
             return Slide() if intent.move_x and p.t.slide_enabled else Crouch()
         return None
@@ -223,6 +228,8 @@ class Slide(State):
     def update(self, p: Player, intent: Intent, dt: float) -> State | None:
         if not p.contacts.on_ground:
             return Airborne()
+        if intent.slide_pressed:            # Circle again cancels the slide, back to running
+            return Grounded()
         self.timer -= dt
         p.vel.x *= max(0.0, 1 - p.t.slide_friction * dt)
         if intent.jump_pressed and p.can_stand():

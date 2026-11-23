@@ -6,6 +6,7 @@ var vertical: int = 0            # +1 up, 0, -1 down (held)
 var jump_pressed: bool = false
 var z_pressed: bool = false      # pick up / tag / confirm / enter or cancel aim
 var x_pressed: bool = false      # throw / lock in
+var slide_pressed: bool = false  # Circle (controller): start a slide, or cancel one in progress
 var jump_held: bool = false
 var aim_stick = null             # null, or [x, y] with y up
 # Mouse (play call). Position is in world coordinates.
