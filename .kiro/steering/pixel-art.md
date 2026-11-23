@@ -21,7 +21,7 @@ Adapted from section 5 of the AI sprite workflow doc. Applies to everything unde
 
 ## Pixel hygiene
 
-9. **Nearest neighbor only.** No bilinear or bicubic, no anti-aliasing, no arbitrary-angle rotation. Moves are whole-pixel cel offsets. A horizontal flip is allowed (the run cycle mirrors the legs); keep the number and torso unflipped.
+9. **Nearest neighbor only.** No bilinear or bicubic, no anti-aliasing, no arbitrary-angle rotation. Moves are whole-pixel cel offsets. Legs are re-assembled per frame from sub-parts of the drawn legs (shin, shoe, row stretch, column shear), never flipped, so the shading keeps its light direction. The torso only shears rows for a lean; the number is never flipped.
 10. Keep the 1 px outline clean. No orphan single pixels beyond the source count (0), no enclosed transparent holes in the body (0).
 11. The disocclusion fill may only copy a neighbor pixel color into a pixel that was opaque in the base pose and is now empty and inside the 2 px closing of the silhouette. It never grows the silhouette, and it never copies outline black or white.
 

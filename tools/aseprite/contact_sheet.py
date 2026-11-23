@@ -22,6 +22,29 @@ def load(anim_dir, name):
     return Image.open(os.path.join(anim_dir, name + ".png")).convert("RGBA"), meta
 
 
+def closeup(anim_dir, out, name="navy", tag="run", scale=4):
+    """One row of one tag at scale x, nearest neighbour, ground line (row 85) and frame numbers."""
+    sheet, meta = load(anim_dir, name)
+    t = [t for t in meta["meta"]["frameTags"] if t["name"] == tag][0]
+    n = t["to"] - t["from"] + 1
+    x0, x1 = 16, 84  # crop the empty margins, the art lives in x 20..80
+    cw, ch = (x1 - x0) * scale, 92 * scale
+    pad = 6
+    img = Image.new("RGBA", (n * (cw + pad) + pad, ch + 20), BG)
+    d = ImageDraw.Draw(img)
+    for k in range(n):
+        fr = meta["frames"][t["from"] + k]["frame"]
+        tile = sheet.crop((fr["x"] + x0, fr["y"], fr["x"] + x1, fr["y"] + 92)).resize((cw, ch), Image.NEAREST)
+        x = pad + k * (cw + pad)
+        d.line([(x, 86 * scale), (x + cw, 86 * scale)], fill=GROUND, width=1)
+        img.alpha_composite(tile, (x, 20))
+        d.line([(x, 20 + 86 * scale), (x + cw, 20 + 86 * scale)], fill=(255, 255, 0, 255), width=1)
+        d.text((x + 2, 4), f"{name} {tag} {k + 1}", fill=(255, 255, 255, 255))
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    img.convert("RGB").save(out)
+    print("close-up ->", out, img.size)
+
+
 def main():
     anim_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "godot/assets/sprites/player/anim")
     out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(ROOT, ".agents/tasks/smooth-run-jump/contact-sheet.png")
@@ -65,6 +88,9 @@ def main():
     os.makedirs(os.path.dirname(out), exist_ok=True)
     img.convert("RGB").save(out)
     print("contact sheet ->", out, img.size)
+    if len(sys.argv) <= 1:
+        closeup(os.path.join(ROOT, "godot/assets/sprites/player/anim"),
+                os.path.join(ROOT, ".agents/tasks/smooth-run-jump/run-cycle-closeup.png"))
 
 
 if __name__ == "__main__":

@@ -155,3 +155,60 @@ Probe set `held_by` on the ball at start and ran the scripted `--smoke` input: s
 - Land, wall cling, crouch, slide and aiming were not seen in game.
 - The match screen still draws actors at the latest tick position (see "Interpolation limit" above).
 - Thresholds (150 px/s apex band, 0.12 s landing, 0.08 s minimum air time, 0.35..1.6 rate clamp) remain untuned guesses.
+
+## Round 2 (feet, arms, jump poses, clock key)
+
+User feedback: "the feet look weird, need the front foot planted and the back foot out and alternate", plus the other changes I had listed. Images to look at:
+- `run-cycle-closeup.png`: navy right-facing run, 8 frames, 4x, ground row 85 drawn (grey and yellow line).
+- `contact-sheet.png`: all four sets, run row plus idle/jump/apex/fall/land.
+- `idle-air-closeup.png`: navy idle, jump, apex, fall, land at 4x.
+- `ingame-run-sequence.png`: sandbox screenshots with the ball held. Top two rows: running left (left-facing set). Bottom two rows: running right.
+
+### What changed in the art
+- `rig.lua` no longer flips legs. Each leg is built from the user's own leg pixels as one of two parts: `N` (the drawn front leg: shin, optionally stretched or squashed by row duplication or removal, plus the flat shoe, moved as a unit) and `F` (the drawn back leg: horizontal leg with the toe-down shoe, lifted by an offset and a 1 to 2 px column shear). There is no mirroring, so the shading keeps its light direction. This removes the thigh slab and the reversed shading.
+- The 2 px outline stub at the left of the pelvis (row 64, x <= 39) moved from the torso layer into `leg_far` (`common.lua`). This was the stray seam pixel in run 3/4/7. The layers still flatten back to the source.
+- Cycle: in half 1 `leg_far` is planted in front (frames 8, 1, 2, 3: flat shoe on row 85, sliding back 6 px per frame under the body) while `leg_near` trails (frames 1, 2: foot 7 to 8 rows above the ground, toe down) and swings forward with the knee up (frame 3: foot 11 rows up). Frame 4 plants `leg_near` in front and lifts `leg_far`. Frames 5 to 8 repeat with the roles swapped. Each leg is planted for 4 frames and in the air for 4.
+- Torso: forward lean by shearing rows (head 1 px, chest 0 or 1 px in contact and down frames), 0/1 px bob (lowest at the down frame, highest at passing and up). Arms counter-swing: the far arm swings in toward the body (up to 8 px) when the near leg is forward; the near arm only moves 0 to 2 px right, 2 px up and down, so "23" stays uncovered.
+- Idle is a relaxed stance: both flat shoes side by side on row 85, legs shorter, arms hanging, 1 px breathing dip.
+- Jump: take-off is a squash with both legs compressed 3 rows; rise has the front knee up and the back leg trailing; apex tucks both knees (feet 10 and 14 rows up); fall extends and stretches the legs apart with arms up and back; land is a deep crouch (legs compressed 4 rows, torso 6 px lower than standing relative to the feet) then recovery. Frame counts and tag names are unchanged (idle 2, run 8, jump 2, apex 1, fall 2, land 2), so `player_anim.json` and the engine mapping stay valid. Hand anchors are recomputed per frame (arm offset + half the lean + the grounding shift).
+
+### Engine and test changes
+- `match_renderer.gd`: the animation clock key is now `"<team>:<role>"` (was the role label). `_age_clocks` runs once per `draw()`: a clock not drawn for 1 s is dropped with `sprites.forget(key)`, and all clocks are dropped when the view tick counter goes backwards (a new match). Match-screen position interpolation is not implemented; this is a known limit (needs a snapshot buffer in `match_screen.gd`).
+- `test_player_anim.gd`: one new test (a role on the other team gets its own clock, `forget()` restarts it).
+- `check_frames.py`: new gait assertions (per set, from per-leg data that `rig.lua` writes): idle both feet on row 85; every run frame has exactly one foot on row 85 and the other at least 4 rows higher; the planted foot is the front one in the contact and down frames; the planted leg changes exactly twice per loop (and so alternates between the halves and at the loop point). Holes are now counted on rows <= 66 only (the gap between two legs is real negative space). The pure black and white allowance is the source count plus the count in the source leg rows, because a leg part is now used twice in some frames (e.g. two shoes in idle).
+- `make_run_cycle.sh`: `KEEP_TMP=1` keeps the intermediate files; per-leg info goes to the temp dir.
+
+### Commands run and results
+```
+tools/make_run_cycle.sh      # exit 0
+  [navy|navy_left|red|red_left] layers flatten back to the source: ok
+  [each set] gait: planted foot per run frame = ['far','far','far','near','near','near','near','far'] -> ok
+  [each set] failures: palette=0, foot=0, bounds=0, orphans=0, holes=0, black=0, white=0, hand=0
+  lowest row per tag (all sets): idle=[85,85]; run=[85 x8]; jump=[85,81]; apex=[75]; fall=[83,85]; land=[85,85]
+  all checks passed (68 frame checks over 4 sets)
+Godot --headless --path godot --import     # new PNGs imported, .import files committed
+godot/run_tests.sh                         # 105 passed, 0 failed (script still ends FAILED from the pre-existing relay !is_open() error)
+```
+In-game: a throwaway probe in /tmp (not committed) ran the sandbox with a scripted left and right run, a held ball, and a scripted jump. I looked at `ingame-run-sequence.png` and the jump sequence: feet on the floor line while running, the planted foot is on the floor and the other foot is lifted, the ball is in the near hand in all frames. I did not look at the match screen again in this round.
+
+### Frame-by-frame verdict (navy right-facing, I looked at the 4x close-up; red and the left sets I judged from the 2x contact sheet and the left-facing in-game run)
+| Frame | Verdict | Notes |
+|---|---|---|
+| run 1 (contact) | good | Front foot flat on row 85 in front, back leg behind with the foot 7 rows up, toe down. |
+| run 2 (down) | good | Same, body lower and leaning, planted foot has slid back 6 px. |
+| run 3 (passing) | acceptable | Planted foot under the body, other knee up with its shoe 11 rows up. The lifted shoe overlaps the planted shin, which looks stacked. |
+| run 4 (up) | acceptable | Planted foot in front again, the other leg tucked behind with the foot 4 rows up. The tucked back leg is a flat horizontal slab at the hip. |
+| run 5 to 8 | acceptable | The silhouette of the legs is the same as 1 to 4 because the same two leg parts trade layers. The alternation shows in the arms and in which layer is planted, not in a different leg shape. |
+| idle 1/2 | acceptable | Feet together and planted, reads as standing. The pants edge is a little ragged where the two shin parts meet the pelvis. |
+| jump 1 (take-off) | acceptable | Legs visibly compressed, torso down. |
+| jump 2 (rise) | acceptable | Front knee forward, back leg trailing, arms up. Reads as a stride in the air. |
+| apex | acceptable | Both knees tucked. A pointed shin corner sticks out at the hip. |
+| fall 1/2 | weak | Legs straight down and slightly apart, arms up. Reads as "standing with arms up", clearly different from run but not dramatic. |
+| land 1/2 | acceptable | Crouch is readable. Jagged pants edge at the hip. |
+
+### Still wrong or not verified
+- The cycle is effectively a 4-pose loop played twice. The two halves differ in arms and layer roles only, since both legs use the same two drawn leg parts. Making half 2 differ would need new drawn art.
+- Foot sliding: the planted foot moves back 12 art px (about 8 screen px) during its 3 planted frames, but at 320 px/s the ground moves about 100 screen px per step. The planted foot therefore slides on the ground in game. Fixing that needs a longer stride in the art or a slower run clock (`run_rate` in `player_sprites.gd`), which I did not change.
+- Hip seams: small pointed corners remain at the hip in apex and some passing frames. The rig layers are kept for hand polishing.
+- Red and left-facing sets were not inspected at 4x. The match screen, wall cling, crouch, slide and aiming were not re-checked after this round. The ball stays large and covers most of the "23" while held (unchanged, existing size).
+- The match screen still draws actors at the latest sim tick (no interpolation). Motion smoothness was judged from stills only.

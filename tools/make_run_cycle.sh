@@ -14,7 +14,7 @@ SRC="$ROOT/godot/assets/sprites/player"
 OUT="$SRC/anim"
 LUA="$ROOT/tools/aseprite"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+trap '[ -n "${KEEP_TMP:-}" ] || rm -rf "$TMP"' EXIT   # KEEP_TMP=1 keeps the intermediate files
 
 [ -x "$ASEPRITE" ] || { echo "aseprite not found: $ASEPRITE (set ASEPRITE)"; exit 1; }
 [ -x "$PY" ] || { echo "python not found: $PY (set PY)"; exit 1; }
@@ -33,6 +33,7 @@ for entry in "${SETS[@]}"; do
   "$ASEPRITE" -b "$TMP/${name}_split.aseprite" --save-as "$TMP/${name}_split_flat.png"
   "$ASEPRITE" -b --script-param root="$ROOT" --script-param split="$TMP/${name}_split.aseprite" \
     --script-param out="$OUT/${name}_rig.aseprite" --script-param hands="$OUT/${name}_hands.json" \
+    --script-param legs="$TMP/${name}_legs.json" \
     --script-param mirror="$mirror" --script "$LUA/rig.lua"
   "$ASEPRITE" -b "$OUT/${name}_rig.aseprite" --sheet "$OUT/$name.png" --sheet-type horizontal \
     --data "$OUT/$name.json" --format json-array --list-tags

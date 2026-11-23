@@ -49,6 +49,7 @@ const MIN_ZOOM := 0.4                      # local play: how far the shared came
 const FRAME_MARGIN := Vector2(260, 200)    # world px kept around the players when framing them
 const SHOW_ME_BOX := false                 # white box around the player you control (always shown if there is no art)
 const SHOW_TAG_RING := false               # green circle: how close an opponent must get to tag you
+const CLOCK_STALE := 1.0                   # s: an animation clock not drawn for this long is dropped (a new down, a left player)
 const RUN_MIN_SPEED := 20.0                # |vx| above this counts as running (which way he faces)
 
 var level
@@ -59,6 +60,8 @@ var _fx_list: Array = []        # double-jump effects: {x, y, age} in world px
 var _walk := {}                  # play call: role -> {x, f}, to face the QB and defender the way they last moved
 var _prev_air := {}              # role -> [state, vy] last frame, to spot the second jump
 var _dt := 0.0                   # seconds since the last drawn frame: the animation clock runs on this, not on sim ticks
+var _clock_idle := {}            # animation clock key ("team:role") -> seconds since it was last drawn
+var _last_tick := -1             # tick of the last drawn view; going backwards means a new match
 var _call_x := {}                # play call: role -> x last frame, to tell walking from standing (no velocity in the call)
 var ci: CanvasItem
 var font: Font
@@ -196,6 +199,7 @@ func draw(p_ci: CanvasItem, p_size: Vector2, view: Dictionary, fps: float, dt: f
 	ci = p_ci
 	_dt = dt
 	_age_fx(dt)
+	_age_clocks(dt, int(view.get("tick", -1)))
 	size = p_size
 	if view.get("local", false):
 		frame(_focus_points(view), dt, hud_h)
@@ -312,7 +316,7 @@ func _draw_platforms() -> void:
 
 ## Draws one player. Returns where the ball goes (the near hand, in screen px), or Vector2.INF when drawn as a box.
 ## `facing` is 1 or -1. `motion` is {state, vx, vy} (the engine's state name and velocity, px/s) and picks the animation
-## frame; the clock is kept per `label`.
+## frame; the clock is kept per team and `label`.
 func _draw_figure(x: float, feet_y: float, team: int, label: String, outline_only: bool = false, me: bool = false,
 		p_h: float = -1.0, facing: int = 1, motion: Dictionary = {}) -> Vector2:
 	var w: float = t.player_width
@@ -323,7 +327,9 @@ func _draw_figure(x: float, feet_y: float, team: int, label: String, outline_onl
 	var top := rect.position.y        # top of what is drawn, so the label clears the taller sprite
 	var spr: Dictionary = {}
 	if not outline_only and sprites.available:
-		spr = sprites.get_frame(label, team, facing, str(motion.get("state", "grounded")), float(motion.get("vx", 0.0)),
+		var key := "%d:%s" % [team, label]
+		_clock_idle[key] = 0.0
+		spr = sprites.get_frame(key, team, facing, str(motion.get("state", "grounded")), float(motion.get("vx", 0.0)),
 				float(motion.get("vy", 0.0)), _dt)
 	if outline_only:
 		_rect_outline(rect.grow(-1.0), color, 2.0)
@@ -412,6 +418,20 @@ func _draw_spot_marker(ok: bool, feet: Array, p_h: float) -> void:
 func _is_mine(view: Dictionary, team: int, role: String) -> bool:
 	return role != "QB" and (bool(view.get("local", false)) or team == view["team"])
 
+## Animation clocks are kept per team and role. A clock nobody drew for CLOCK_STALE seconds is forgotten, and so are
+## all of them when the tick counter runs backwards (a new match), so nobody inherits an old clock.
+func _age_clocks(dt: float, tick: int) -> void:
+	if tick >= 0 and tick < _last_tick:
+		for k in _clock_idle:
+			sprites.forget(k)
+		_clock_idle.clear()
+	if tick >= 0:
+		_last_tick = tick
+	for k in _clock_idle.keys():
+		_clock_idle[k] = float(_clock_idle[k]) + dt
+		if _clock_idle[k] > CLOCK_STALE:
+			sprites.forget(k)
+			_clock_idle.erase(k)
 ## Fade out finished effects.
 func _age_fx(dt: float) -> void:
 	for e in _fx_list:

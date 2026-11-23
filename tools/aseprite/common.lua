@@ -17,6 +17,8 @@ C.HAND = { x = 76.2, y = 39.4 }
 
 function C.region(x, y, mirror)
   local xx = mirror and (C.SIZE - 1 - x) or x
+  -- the 2 px outline stub on row 64 left of the pelvis belongs to the back leg's top edge
+  if y == C.LEG_TOP - 1 and xx <= 39 then return "leg_far" end
   if y >= C.LEG_TOP then
     if xx <= C.LEG_SPLIT_X then return "leg_far" end
     return "leg_near"

@@ -143,6 +143,18 @@ func test_run_cycle_advances_with_speed_and_not_with_facing() -> void:
 	var after: int = int(fast.get_frame("p", 0, -1, "grounded", -320.0, 0.0, 0.0)["frame"])
 	check_eq(after, before, "turning around mid-stride does not change the frame")
 
+func test_each_team_and_role_has_its_own_clock_and_forget_resets_it() -> void:
+	var s := PlayerSprites.new()
+	if not s.animated:
+		return
+	for i in 6:
+		s.get_frame("0:QB", 0, 1, "grounded", 320.0, 0.0, 0.08)
+	var old: Dictionary = s.get_frame("0:QB", 0, 1, "grounded", 320.0, 0.0, 0.0)
+	var other: Dictionary = s.get_frame("1:QB", 1, 1, "grounded", 320.0, 0.0, 0.0)
+	check(int(old["frame"]) != int(other["frame"]), "the same role on the other team starts its own clock")
+	s.forget("0:QB")
+	var fresh: Dictionary = s.get_frame("0:QB", 0, 1, "grounded", 320.0, 0.0, 0.0)
+	check_eq(int(fresh["frame"]), int(other["frame"]), "after forget() the clock starts again at frame 0")
 func test_missing_animation_falls_back_to_the_static_pose() -> void:
 	var s := PlayerSprites.new()
 	s.animated = false
