@@ -77,7 +77,7 @@ func _pick_display() -> void:
 # ------------------------------------------------------------ command line
 
 ## Options are written like `--name` or `--name=value`. Returns {} (no options: show the launcher),
-## {"error": text}, or {"config": {mode, level, port, address, code, relay}}.
+## {"error": text}, or {"config": {mode, level, port, address, code, relay, no_router}}.
 static func parse_options(args: PackedStringArray) -> Dictionary:
 	var opts := {}
 	for arg in args:
@@ -103,9 +103,7 @@ static func parse_options(args: PackedStringArray) -> Dictionary:
 		modes.append("join_code")
 	if modes.size() > 1:
 		return {"error": "choose only one of: host, join, join-code, local, catch, sandbox"}
-	var mode: String = modes[0] if not modes.is_empty() else "practice"
-	if mode == "host" and opts.has("online"):
-		mode = "host_online"
+	var mode: String = modes[0] if not modes.is_empty() else "practice"     # --online (old) changes nothing: hosting always is
 	var port: int = Protocol.DEFAULT_PORT
 	if opts.has("port"):
 		if not str(opts["port"]).is_valid_int():
@@ -118,11 +116,11 @@ static func parse_options(args: PackedStringArray) -> Dictionary:
 			stem = "arena_01" if mode == "sandbox" else "field_01"
 		path = "%s/%s.json" % [Launch.LEVELS_DIR, stem.get_file().get_basename()]
 	return {"config": {"mode": mode, "level": path, "port": port, "address": str(opts.get("join", "")),
-			"code": str(opts.get("join-code", "")), "relay": str(opts.get("relay", ""))}}
+			"code": str(opts.get("join-code", "")), "relay": str(opts.get("relay", "")), "no_router": opts.has("no-router")}}
 
 ## Why this launch cannot work, or "". Same checks as the menu uses. An explicit relay stands in for a configured one.
 func _check(c: Dictionary) -> String:
-	if c["relay"] != "" and c["mode"] in ["join_code", "host_online"]:
+	if c["relay"] != "" and c["mode"] in ["join_code", "host"]:
 		OS.set_environment(Invite.RELAY_ENV, c["relay"])
 	return Launch.check_launch(c["mode"], c["level"], c["port"], c["address"], c["code"])
 
@@ -145,7 +143,7 @@ func _show_launcher() -> void:
 func _on_chosen(result: Dictionary) -> void:
 	diag.info("launch requested: %s" % str(result))
 	var cfg := {"mode": result["mode"], "level": result["level"], "port": result["port"], "address": result["address"],
-			"code": result["code"], "relay": ""}
+			"code": result["code"], "relay": "", "no_router": false}
 	var why := Launch.check_launch(cfg["mode"], cfg["level"], cfg["port"], cfg["address"], cfg["code"])
 	if why != "":
 		diag.warn("launch refused: %s" % why)

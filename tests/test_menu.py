@@ -68,6 +68,13 @@ def test_two_players_only_lists_football_fields():
     assert s.result.mode == "local" and s.result.level.stem == "field_09"
 
 
+@pytest.fixture(autouse=True)
+def free_port(monkeypatch):
+    """The menu greys hosting when its port is taken; don't let a game running on this machine fail the tests."""
+    import ballbrawlla.menu as menu
+    monkeypatch.setattr(menu, "check_port", lambda port: None)
+
+
 @pytest.fixture
 def relay_env(monkeypatch):
     from ballbrawlla.net import invite
@@ -81,51 +88,76 @@ def relay_env(monkeypatch):
     return monkeypatch
 
 
-def test_online_screen_lists_invite_and_lan_options(relay_env):
+def test_online_screen_is_host_or_join(relay_env):
     s = MenuState()
     goto(s, "PLAY")
     goto(s, "ONLINE")
-    assert labels(s) == ["HOST ONLINE GAME", "JOIN WITH CODE", "HOST ON THIS NETWORK", "JOIN ON THIS NETWORK"]
-    goto(s, "HOST ONLINE GAME")
-    assert s.screen == "level" and s.mode == "host_online"
+    assert labels(s) == ["HOST GAME", "JOIN GAME"]
+    goto(s, "HOST GAME")
+    assert s.screen == "level" and s.mode == "host"
     assert "football" not in " ".join(i.reason or "" for i in s.items())    # the picker only shows fields
     s.select()
-    assert s.result.mode == "host_online"
+    assert s.result.mode == "host"
 
 
-def test_online_options_are_greyed_without_a_relay(monkeypatch):
+def test_hosting_and_joining_need_no_relay(monkeypatch):
+    from ballbrawlla import launch, menu
     from ballbrawlla.net import invite
     monkeypatch.setattr(invite, "DEFAULT_RELAY", "")
     monkeypatch.delenv(invite.RELAY_ENV, raising=False)
+    monkeypatch.setattr(launch, "check_port", lambda port: None)
+    monkeypatch.setattr(menu, "check_port", lambda port: None)
     s = MenuState()
     goto(s, "PLAY")
     goto(s, "ONLINE")
-    host, join = s.items()[:2]
-    assert not host.enabled and not join.enabled and "No relay server" in join.reason
-    s.cursor = 1
-    s.select()
-    assert s.screen == "online" and "No relay server" in s.error
+    assert all(i.enabled for i in s.items())
+
+
+def _join(monkeypatch=None):
+    s = MenuState()
+    goto(s, "PLAY")
+    goto(s, "ONLINE")
+    goto(s, "JOIN GAME")
+    s.close()                       # no network listener needed
+    return s
 
 
 def test_join_with_code_types_pastes_and_connects(relay_env):
-    s = MenuState()
-    goto(s, "PLAY")
-    goto(s, "ONLINE")
-    goto(s, "JOIN WITH CODE")
-    assert s.screen == "code" and s.editing and not s.items()[1].enabled
-    for ch in "kq7-m3":
+    from ballbrawlla.net.invite import address_code
+    s = _join()
+    assert s.screen == "join" and s.editing and labels(s)[1] == "CODE" and not s.items()[2].enabled
+    code = address_code("203.0.113.5")                       # an 8-character address code
+    for ch in code[:5] + "-":
         press(s, ord(ch), ch)
-    assert s.code == "KQ7M3" and labels(s)[0] == "CODE" and not s.items()[1].enabled
-    press(s, ord("x"), "x")
-    assert "KQ7-M3X" in s.items()[0].label and s.items()[1].enabled
-    s.paste("Join my game! Code: ab2-cd3")                 # a whole pasted message still finds the code
-    assert s.code == "AB2CD3"
+    assert s.code == code[:5] and not s.items()[2].enabled
+    for ch in code[5:]:
+        press(s, ord(ch), ch)
+    assert f"{code[:4]}-{code[4:]}" in s.items()[1].label and s.items()[2].enabled
+    s.paste("Join my game! Code: ab2-cd3")                   # a pasted message still finds the code
+    assert s.code == "AB2CD3" and s.items()[2].enabled       # a relay code (a relay is set here)
     press(s, pygame.K_BACKSPACE)
     assert s.code == "AB2CD"
-    s.paste("ab2cd4")
+    s.paste(code.lower())
     press(s, pygame.K_RETURN)                               # Enter on the code row moves to CONNECT
     s.select()
-    assert s.result.mode == "join_code" and s.result.code == "AB2CD4"
+    assert s.result.mode == "join_code" and s.result.code == code
+
+
+def test_join_code_typo_is_explained():
+    from ballbrawlla.net.invite import address_code
+    s = _join()
+    code = address_code("203.0.113.5")
+    s.paste(code[:-1] + ("A" if code[-1] != "A" else "B"))
+    assert "typo" in s.items()[2].reason
+
+
+def test_relay_code_without_a_relay_is_explained(monkeypatch):
+    from ballbrawlla.net import invite
+    monkeypatch.setattr(invite, "DEFAULT_RELAY", "")
+    monkeypatch.delenv(invite.RELAY_ENV, raising=False)
+    s = _join()
+    s.paste("KQ7-M3X")
+    assert "8 characters" in s.items()[2].reason
 
 
 def test_broken_level_is_greyed_in_the_picker(tmp_path):
@@ -150,24 +182,6 @@ def test_escape_from_level_picker_returns_to_the_free_play_screen():
     assert s.screen == "freeplay"
 
 
-def test_join_needs_an_address():
-    s = MenuState()
-    goto(s, "PLAY")
-    goto(s, "ONLINE")
-    goto(s, "JOIN ON THIS NETWORK")
-    s.close()                       # no network listener needed for this test
-    assert s.items()[0].action == "none" and s.editing                     # starts on the address row
-    assert not s.items()[2].enabled                                         # CONNECT needs an address
-    for ch in "10.0.0.7":
-        press(s, ord(ch), ch)
-    assert s.address == "10.0.0.7" and s.items()[2].enabled
-    press(s, pygame.K_BACKSPACE)
-    assert s.address == "10.0.0."
-    s.cursor = 2
-    s.select()
-    assert s.result.mode == "join" and s.result.address == "10.0.0."
-
-
 def test_escape_goes_back_then_quits():
     s = MenuState()
     goto(s, "PLAY")
@@ -182,8 +196,7 @@ def test_every_screen_draws(relay_env):
     fonts = {k: pygame.font.Font(None, n) for k, n in (("big", 64), ("mid", 36), ("small", 24))}
     surface = pygame.Surface((1280, 720))
     s = MenuState()
-    for path in (["PLAY"], ["PLAY", "ONLINE"], ["PLAY", "ONLINE", "JOIN ON THIS NETWORK"],
-                 ["PLAY", "ONLINE", "JOIN WITH CODE"]):
+    for path in (["PLAY"], ["PLAY", "ONLINE"], ["PLAY", "ONLINE", "JOIN GAME"]):
         s = MenuState()
         for label in path:
             goto(s, label)
@@ -262,7 +275,7 @@ def _join_screen(monkeypatch):
     s = MenuState()
     goto(s, "PLAY")
     goto(s, "ONLINE")
-    goto(s, "JOIN ON THIS NETWORK")
+    goto(s, "JOIN GAME")
     return s, lambda name, level, tcp: Beacon(name, level, tcp, discovery_port=port)
 
 
@@ -279,11 +292,35 @@ def test_join_lists_found_games_and_connects(monkeypatch):
                 break
             time.sleep(0.02)
         assert [i.label for i in s.items()][0] == "Kris's game" and len(s.games) == 1
-        assert s.cursor == 1 and s.editing                                      # cursor stayed on the address row
+        assert s.cursor == 1 and s.editing                                      # cursor stayed on the code row
         shown = s.games[0].address        # this machine's LAN address, or loopback when offline
         s.cursor = 0
         s.select()
         assert s.result.mode == "join" and s.result.port == 50611 and s.result.address == shown
+    finally:
+        beacon.close()
+        s.close()
+
+
+def test_typed_code_of_a_game_on_this_network_connects_to_it_directly(monkeypatch):
+    import time
+    from ballbrawlla.net.invite import address_code
+    s, make_beacon = _join_screen(monkeypatch)
+    code = address_code("203.0.113.5")              # its public code: dialling that from inside often fails
+    beacon = make_beacon("Kris's game", "Field 05", 50611)
+    beacon.set_codes([code])
+    try:
+        beacon.tick(now=1.0)
+        for _ in range(50):
+            s.update()
+            if s.games:
+                break
+            time.sleep(0.02)
+        s.cursor = len(s.items()) - 2
+        s.paste(code)
+        s.cursor = len(s.items()) - 1
+        s.select()
+        assert s.result.mode == "join" and s.result.port == 50611 and s.result.address == s.games[0].address
     finally:
         beacon.close()
         s.close()
@@ -308,8 +345,8 @@ def test_join_without_discovery_says_so(monkeypatch):
     s = MenuState()
     goto(s, "PLAY")
     goto(s, "ONLINE")
-    goto(s, "JOIN ON THIS NETWORK")
-    assert "automatically" in s.items()[0].label
+    goto(s, "JOIN GAME")
+    assert "Can't look" in s.items()[0].label
 
 
 def test_mouse_click_selects_a_row():

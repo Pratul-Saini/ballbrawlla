@@ -4,8 +4,10 @@ A host runs a `Beacon`, which sends a small UDP broadcast about once a second wh
 The join screen runs a `Finder`, which listens for those broadcasts and keeps the list of games heard
 recently. Both are non-blocking and are driven from the caller's loop, with no threads.
 
-Broadcasts only travel within the local network, and some Wi-Fi networks block them. Typing the address
-always still works. The address of a game is the sender of its packet, never a value the packet claims.
+Broadcasts only travel within the local network, and some Wi-Fi networks block them; typing the invite
+code still works then. The address of a game is the sender of its packet, never a value the packet claims.
+A beacon also lists the game's invite codes, so a joiner who types a code connects directly when the game is
+on the same network (net/online.py).
 """
 
 from __future__ import annotations
@@ -32,15 +34,16 @@ class FoundGame:
     name: str
     level: str
     version: str = ""
+    codes: tuple[str, ...] = ()        # invite codes (bare) that lead to this game
 
 
 def _clean(value: object) -> str:
     return "".join(c for c in str(value) if c.isprintable())[:MAX_TEXT].strip()
 
 
-def encode(name: str, level: str, port: int) -> bytes:
+def encode(name: str, level: str, port: int, codes: list[str] | tuple[str, ...] = ()) -> bytes:
     return json.dumps({"magic": MAGIC, "v": PROTOCOL_VERSION, "game": __version__, "name": name, "level": level,
-                       "port": port},
+                       "port": port, "codes": list(codes)},
                       separators=(",", ":")).encode()
 
 
@@ -53,8 +56,10 @@ def decode(data: bytes, sender: str) -> FoundGame | None:
         port = msg.get("port")
         if not isinstance(port, int) or isinstance(port, bool) or not 1024 <= port <= 65535:
             return None
+        raw = msg.get("codes", [])
+        codes = tuple(_clean(c).upper() for c in raw[:4] if isinstance(c, str)) if isinstance(raw, list) else ()
         return FoundGame(sender, port, _clean(msg.get("name", "")) or sender, _clean(msg.get("level", "")),
-                         _clean(msg.get("game", "")))
+                         _clean(msg.get("game", "")), codes)
     except (ValueError, UnicodeDecodeError):
         return None
 
@@ -63,7 +68,9 @@ class Beacon:
     """Advertises a hosted game. Call tick() every frame; it sends at most once per BEACON_INTERVAL."""
 
     def __init__(self, name: str, level: str, port: int, discovery_port: int = DISCOVERY_PORT) -> None:
-        self.packet = encode(_clean(name), _clean(level), port)
+        self.name, self.level, self.port = _clean(name), _clean(level), port
+        self.codes: tuple[str, ...] = ()
+        self.packet = encode(self.name, self.level, port)
         self.discovery_port = discovery_port
         self._last = -BEACON_INTERVAL
         try:
@@ -72,6 +79,13 @@ class Beacon:
             self.sock.setblocking(False)
         except OSError:
             self.sock = None
+
+    def set_codes(self, codes: list[str]) -> None:
+        """Advertise these invite codes from the next beacon on."""
+        if tuple(codes) != self.codes:
+            self.codes = tuple(codes)
+            self.packet = encode(self.name, self.level, self.port, self.codes)
+            self._last = -BEACON_INTERVAL            # tell the network now
 
     def tick(self, open_seat: bool = True, now: float | None = None) -> bool:
         """Send a beacon if one is due and a seat is open. Returns True if a packet went out."""

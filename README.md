@@ -66,54 +66,34 @@ the on-screen button). **F5** or a controller's **Options** starts a new match. 
 because it sits next to Blue's keys. F1 toggles the debug overlay, F3 hides or shows the controls HUD,
 and Esc quits.
 
-## Local network play (2 players)
+## Playing together on two computers
 
-Both machines need this repo installed as above and on the same network.
+Everything happens in the game's menu; there is nothing to start in a terminal.
 
-```sh
-python -m ballbrawlla --host               # machine A: prints "Hosting on 192.168.x.y:50555"
-python -m ballbrawlla --join 192.168.x.y   # machine B
-```
+1. **Host:** Play → Online → **Host game**, pick a level. The waiting screen shows an **invite code**
+   (like `2JDH-GC8A`; Ctrl+C copies it) and says who can join:
+   - **Same Wi-Fi: ready** – always.
+   - **Internet: ready** – when your router agreed to open the game's port for you (automatic, UPnP), or a
+     relay server is set up. If it says **not available**, it says why and how to fix it (turn on UPnP in
+     the router, or forward TCP port 50555 to the address it shows); players on your Wi-Fi can still join.
+2. **Joiner:** Play → Online → **Join game**, type or paste the code (Ctrl+V), Connect. Games on the same
+   Wi-Fi also appear in that list by themselves: just pick one.
 
-- The host is **Blue** and runs the only simulation; the joining player is **Red**. A coin flip
-  picks who starts on offense. The match starts once both are connected.
-- The client sends its input and draws the view the host sends back. Each player is sent only
-  what they're allowed to see (the defense never receives the throw aim, and the offense never
-  receives the Defender's spawn during the play call).
-- The level and tuning come from the host, so the client's `config.py` and `levels/` don't matter.
-- Players pass through each other. If both press Z on the same tick, the one closer to the ball gets it.
-- Windows Firewall will ask to allow Python the first time you host. Allow it on private networks.
-- Use `--port N` on both sides to change the port (default 50555). R (reset) works on the host only.
-- You can test on one machine with two terminals: `--host`, then `--join 127.0.0.1`.
+The host is **Blue** and runs the only simulation; the joiner is **Red**. The match starts once both are in.
+To try it alone, press **N** on the host's waiting screen: a second game window opens on the same computer
+and joins. The first time you host, your computer may ask whether to allow the game: allow it.
 
-## Online play with an invite code (different networks)
+How it works, briefly:
+- A code is the host's address plus a check letter (typos are caught, not dialled). On the same Wi-Fi the
+  joiner finds the host directly from its LAN broadcast, whatever the code says.
+- When a relay server is set (`--relay HOST[:PORT]`, `BALLBRAWLLA_RELAY`, or `DEFAULT_RELAY` in
+  `src/ballbrawlla/net/invite.py` once one is deployed), hosts get a 6-character relay code instead, which
+  works from any network with no router setup. See [docs/networking.md](docs/networking.md).
+- Each player is sent only what they may see (the defense never receives the throw aim). The joiner plays
+  one round trip behind the host; traffic is **not encrypted**.
 
-The host gets a short **invite code** and the other player, on any network, types it in. Both connect
-out to a **relay server**, so there's no port forwarding or IP address to share.
-
-```sh
-python -m ballbrawlla --host --online             # prints and shows "Invite code: KQ7-M3X"
-python -m ballbrawlla --join-code KQ7-M3X         # the other player, anywhere
-```
-
-In the menu: **Play → Online → Host online game / Join with code** (Ctrl+V pastes a code). The host's
-waiting screen shows the code, and **Ctrl+C** copies it. Codes never use 0, O, 1, I or L, and dashes,
-spaces and case don't matter. A friend on the same network can still join the same game by address.
-
-**Relay server.** Someone has to run one where both players can reach it (any small VPS, open TCP 50600):
-
-```sh
-pip install -e .                     # or just copy the repo: the relay needs only Python 3.11+
-ballbrawlla-relay --port 50600       # = python -m ballbrawlla.net.relay_server
-```
-
-Players find it via `--relay HOST[:PORT]`, the `BALLBRAWLLA_RELAY` environment variable, or `DEFAULT_RELAY`
-in `src/ballbrawlla/net/invite.py` (set that once it's deployed so nobody has to configure anything).
-To try it on one machine, run the relay, then `--host --online --relay 127.0.0.1` and
-`--join-code CODE --relay 127.0.0.1` in two more terminals.
-
-The relay only passes bytes along and can't read the game's rules, but traffic is **not encrypted**. The
-joiner plays one internet round trip behind the host (there's no client-side prediction yet).
+From a terminal, if you prefer: `python -m ballbrawlla --host` and `python -m ballbrawlla --join-code CODE`
+(or `--join ADDRESS`; `--port N` on both sides; `--no-router` keeps the host to the local network).
 
 ## Controls
 

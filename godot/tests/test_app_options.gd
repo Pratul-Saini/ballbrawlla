@@ -28,8 +28,8 @@ func test_each_mode_flag_picks_its_mode_and_default_level() -> void:
 func test_hosting_and_joining() -> void:
 	var h := _cfg(["--host", "--level=field_03", "--port=50999"])
 	check(h["mode"] == "host" and h["port"] == 50999, str(h))
-	var o := _cfg(["--host", "--online", "--relay=relay.example.com:50601"])
-	check(o["mode"] == "host_online" and o["relay"] == "relay.example.com:50601", str(o))
+	var o := _cfg(["--host", "--online", "--relay=relay.example.com:50601", "--no-router"])
+	check(o["mode"] == "host" and o["relay"] == "relay.example.com:50601" and o["no_router"], str(o))
 	var j := _cfg(["--join=10.0.0.5"])
 	check(j["mode"] == "join" and j["address"] == "10.0.0.5" and j["level"] == "", str(j))
 	var c := _cfg(["--join-code=KQ7-M3X", "--relay=127.0.0.1"])

@@ -179,9 +179,10 @@ func _rect_outline(r: Rect2, color: Color, width: float = 1.0) -> void:
 # ------------------------------------------------------------ main
 
 ## `status` (e.g. network state) is always shown; `controls` (the key list) only while show_controls is on.
-## `invite`: the online host's invite code, shown big while waiting.
+## `invite`: the host's waiting panel, shown while waiting for the other player: {"code": "KQ7M-3XPA" or "" while it
+## is being worked out, "lines": [[label, text, state]], "copied": bool, "test": bool (offer N: open a test window)}.
 func draw(p_ci: CanvasItem, p_size: Vector2, view: Dictionary, fps: float, dt: float, status: String = "",
-		controls: String = "", invite: String = "") -> void:
+		controls: String = "", invite: Dictionary = {}) -> void:
 	ci = p_ci
 	size = p_size
 	if view.get("local", false):
@@ -197,16 +198,59 @@ func draw(p_ci: CanvasItem, p_size: Vector2, view: Dictionary, fps: float, dt: f
 	if view.has("actors"):
 		_draw_actors(view)
 	_draw_hud(view, fps, status, controls)
-	if invite != "" and phase == "waiting":
+	if not invite.is_empty() and phase == "waiting":
 		_draw_invite(invite)
 
-func _draw_invite(code: String) -> void:
-	var box := Rect2(size.x / 2.0 - 280.0, size.y / 2.0 - 75.0, 560.0, 150.0)
+func _wrapped(s: String, width: float, px: int) -> Array:
+	var out: Array = []
+	var line := ""
+	for word in s.split(" ", false):
+		var trial := word if line == "" else "%s %s" % [line, word]
+		if line != "" and font.get_string_size(trial, HORIZONTAL_ALIGNMENT_LEFT, -1, px).x > width:
+			out.append(line)
+			line = word
+		else:
+			line = trial
+	if line != "":
+		out.append(line)
+	return out
+
+## The host's waiting panel: the code to share, and who can join (same Wi-Fi / internet).
+func _draw_invite(invite: Dictionary) -> void:
+	var colors := {"ready": SPOT_OK, "checking": BANNER, "unavailable": c8(255, 170, 160)}
+	var px := 16
+	var line_h := 20.0
+	var w := minf(760.0, size.x - 40.0)
+	var label_w := 120.0
+	var body: Array = []
+	var n_lines := 0
+	for ln in invite.get("lines", []):
+		var wrapped := _wrapped(ln[1], w - 60.0 - label_w, px)
+		body.append([ln[0], wrapped, colors.get(ln[2], DIM)])
+		n_lines += wrapped.size()
+	var h := 150.0 + n_lines * line_h + body.size() * 6.0 + (30.0 if invite.get("test", false) else 0.0)
+	var box := Rect2(size.x / 2.0 - w / 2.0, size.y / 2.0 - h / 2.0, w, h)
 	ci.draw_rect(box, c8(16, 17, 22))
 	_rect_outline(box, BANNER, 2.0)
-	_text("Invite code", Vector2(box.get_center().x, box.position.y + 16.0), DIM, 16, true)
-	_text(code, Vector2(box.get_center().x, box.position.y + 40.0), BANNER, 70, true)
-	_text("Share it with the other player. Ctrl+C copies it.", Vector2(box.get_center().x, box.end.y - 30.0), DIM, 16, true)
+	var cx := box.get_center().x
+	_text("Waiting for the other player. Send them this invite code:", Vector2(cx, box.position.y + 14.0), DIM, px, true)
+	var code: String = invite.get("code", "")
+	var hint := ""
+	if code != "":
+		_text(code, Vector2(cx, box.position.y + 40.0), BANNER, 64, true)
+		hint = "copied!" if invite.get("copied", false) else "Ctrl+C copies it. They pick JOIN GAME and type it."
+	else:
+		_text("getting your code...", Vector2(cx, box.position.y + 56.0), DIM, px, true)
+	_text(hint, Vector2(cx, box.position.y + 104.0), DIM, px, true)
+	var y := box.position.y + 136.0
+	for b in body:
+		_text("%s:" % b[0], Vector2(box.position.x + 30.0, y), DIM, px)
+		for k in b[1].size():
+			_text(b[1][k], Vector2(box.position.x + 30.0 + label_w, y + k * line_h), b[2], px)
+		y += b[1].size() * line_h + 6.0
+	if invite.get("test", false):
+		_text("No second player handy? N opens a second window on this computer that joins.",
+				Vector2(cx, box.end.y - 28.0), DIM, px, true)
 
 # ------------------------------------------------------------ world
 

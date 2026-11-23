@@ -202,7 +202,7 @@ func _draw() -> void:
 		if item.hint != "":
 			_text(item.hint, Vector2(rect.end.x - 16.0, rect.get_center().y), DIM, 20, "midright")
 		if not item.enabled() and sel:
-			# Long reasons (the missing-relay one is 230 characters) wrap inside the screen, above the footer lines.
+			# Long reasons wrap inside the screen, above the footer lines.
 			var lines := _wrapped_lines(item.reason, 900.0, 20)
 			var y := size.y - 100.0 - 26.0 * lines.size()
 			for line in lines:
@@ -212,12 +212,15 @@ func _draw() -> void:
 		var pads := ", ".join(pad_names)
 		_text("controller: %s" % pads if pads != "" else "no controller found (keyboard and mouse work)", Vector2(size.x / 2.0, size.y - 50.0), DIM, 20, "midbottom")
 	elif state.screen == "online":
-		_text("your address: %s" % Protocol.lan_ip(), Vector2(size.x / 2.0, size.y - 74.0), DIM, 20, "midbottom")
-		_text("First time hosting? If your computer asks, allow incoming connections.", Vector2(size.x / 2.0, size.y - 50.0), DIM, 20, "midbottom")
-	elif state.screen == "code":
-		_text("The host sees the code on their waiting screen (Ctrl+C there copies it).", Vector2(size.x / 2.0, size.y - 50.0), DIM, 20, "midbottom")
+		var lines := _wrapped_lines("One player hosts and gets an invite code; the other picks JOIN GAME and types it. "
+				+ "Works on the same Wi-Fi and, when the host's router allows it, over the internet. The host's screen says "
+				+ "which. First time hosting? If your computer asks, allow the game.", 760.0, 20)
+		var y := size.y - 160.0
+		for line in lines:
+			_text(line, Vector2(size.x / 2.0, y), DIM, 20, "midtop")
+			y += 22.0
 	elif state.screen == "join":
-		_text("Nothing showing up? You and the host must be on the same Wi-Fi, and your firewall must allow this game.", Vector2(size.x / 2.0, size.y - 50.0), DIM, 20, "midbottom")
+		_text("The code is on the host's screen. Games on your Wi-Fi also show up here by themselves.", Vector2(size.x / 2.0, size.y - 50.0), DIM, 20, "midbottom")
 	_text("v%s" % Version.VERSION, Vector2(size.x - 14.0, size.y - 10.0), DIM, 20, "bottomright")
 	_text("Up/Down: move   Enter / click / Cross: select   Esc / Circle: back   M: music", Vector2(size.x / 2.0, size.y - 20.0), DIM, 20, "midbottom")
 	if state.error != "":

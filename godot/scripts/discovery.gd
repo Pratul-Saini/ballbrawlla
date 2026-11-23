@@ -2,7 +2,8 @@ extends RefCounted
 ## Find games on the local network without typing an IP address (src/ballbrawlla/net/discovery.py).
 ## A host runs a Beacon (a small UDP broadcast about once a second while it has a free seat); the join screen runs a
 ## Finder, which keeps the list of games heard recently. The packet format is identical to Python's.
-## The address of a game is the sender of its packet, never a value the packet claims.
+## The address of a game is the sender of its packet, never a value the packet claims. A beacon also lists the game's
+## invite codes, so a joiner who types a code connects directly when the game is on the same network.
 
 const Protocol = preload("res://scripts/protocol.gd")
 const Version = preload("res://scripts/version.gd")
@@ -19,6 +20,7 @@ class FoundGame:
 	var name := ""
 	var level := ""
 	var version := ""
+	var codes: Array = []      # invite codes (bare) that lead to this game
 
 static func _clean(value) -> String:
 	var out := ""
@@ -27,9 +29,9 @@ static func _clean(value) -> String:
 			out += ch
 	return out.substr(0, MAX_TEXT).strip_edges()
 
-static func encode(game_name: String, level: String, port: int) -> PackedByteArray:
+static func encode(game_name: String, level: String, port: int, codes: Array = []) -> PackedByteArray:
 	return JSON.stringify({"magic": MAGIC, "v": Protocol.PROTOCOL_VERSION, "game": Version.VERSION, "name": game_name,
-			"level": level, "port": port}).to_utf8_buffer()
+			"level": level, "port": port, "codes": codes}).to_utf8_buffer()
 
 ## A FoundGame for a valid beacon packet, else null. Never fails on garbage.
 static func decode(data: PackedByteArray, sender: String):
@@ -53,21 +55,40 @@ static func decode(data: PackedByteArray, sender: String):
 		g.name = sender
 	g.level = _clean(parsed.get("level", ""))
 	g.version = _clean(parsed.get("game", ""))
+	var raw = parsed.get("codes", [])
+	if typeof(raw) == TYPE_ARRAY:
+		for c in raw.slice(0, 4):
+			if typeof(c) == TYPE_STRING:
+				g.codes.append(_clean(c).to_upper())
 	return g
 
 ## Advertises a hosted game. Call tick() every frame; it sends at most once per BEACON_INTERVAL.
 class Beacon:
 	var packet: PackedByteArray
 	var discovery_port: int
+	var codes: Array = []
+	var _name := ""
+	var _level := ""
+	var _port := 0
 	var _udp := PacketPeerUDP.new()
 	var _last := -1000.0
 	var _open := false
 
 	func _init(game_name: String, level: String, port: int, p_discovery_port: int = 50556) -> void:
+		_name = game_name
+		_level = level
+		_port = port
 		packet = load("res://scripts/discovery.gd").encode(game_name, level, port)
 		discovery_port = p_discovery_port
 		_udp.set_broadcast_enabled(true)
 		_open = true
+
+	## Advertise these invite codes from the next beacon on.
+	func set_codes(p_codes: Array) -> void:
+		if p_codes != codes:
+			codes = p_codes.duplicate()
+			packet = load("res://scripts/discovery.gd").encode(_name, _level, _port, codes)
+			_last = -1000.0         # tell the network now
 
 	## Send a beacon if one is due and a seat is open. Returns true if a packet went out.
 	func tick(open_seat: bool = true, now: float = -1.0) -> bool:

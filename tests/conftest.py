@@ -37,6 +37,13 @@ def run(game: Game, intent: Intent | list[Intent] | None = None, ticks: int = 1)
         game.step(intents, game.t.dt)
 
 
+@pytest.fixture(autouse=True)
+def _own_settings(tmp_path, monkeypatch):
+    """Every test gets an empty writable folder, so a settings.json saved from a real menu (a relay address,
+    say) can't leak into tests, and tests never write into the checkout."""
+    monkeypatch.setenv("BALLBRAWLLA_HOME", str(tmp_path / "home"))
+
+
 @pytest.fixture
 def settled():
     """Player standing on the floor, ball resting far away."""

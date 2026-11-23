@@ -1,12 +1,12 @@
 extends Node2D
-## A football match: practice, catch practice, two players on one screen, hosting a game (on this network or online with
-## an invite code), or joining one. Reads input, runs the Session at a fixed 120 Hz (or, when joining, sends input and
+## A football match: practice, catch practice, two players on one screen, hosting a game (with an invite code that
+## works on the same network and, when possible, over the internet: reach.gd), or joining one. Reads input, runs the Session at a fixed 120 Hz (or, when joining, sends input and
 ## draws what the host sends), and draws it with the match renderer. Esc opens the pause menu, F2 the notes.
 ##
 ## The launcher (app.gd) calls setup(config) before adding this node. Run on its own for testing:
-##   Godot --path godot res://scenes/match.tscn -- --mode=practice|catch|local|host|join --level=field_01
+##   Godot --path godot res://scenes/match.tscn -- --mode=practice|catch|local|host|join|join_code --level=field_01
 ##   Test hooks:  -- --smoke   -- --shot=/tmp/a.png --at=2.5   -- --autoplay (a scripted player)
-## config: {mode, level (path), port, address, code, relay, music, diag}. Emits finished(reason, message).
+## config: {mode, level (path), port, address, code, relay, no_router, music, diag}. Emits finished(reason, message).
 
 signal finished(reason: String, message: String)    # reason: "menu" | "quit"
 
@@ -26,6 +26,7 @@ const Protocol = preload("res://scripts/protocol.gd")
 const Discovery = preload("res://scripts/discovery.gd")
 const RelayClient = preload("res://scripts/relay_client.gd")
 const Invite = preload("res://scripts/invite.gd")
+const Reach = preload("res://scripts/reach.gd")
 
 const MAX_FRAME_TIME := 0.25
 
@@ -51,12 +52,16 @@ var _shot_at := 1.6
 var _elapsed := 0.0
 var _last_view := {}
 var _host                     # Host, when hosting
-var _room                     # RelayRoom, when hosting online
+var _reach                    # Reach (invite code, internet status), when hosting
 var _beacon
+var _copied_at := -10.0
+var _test_pid := -1           # the test window opened with N
 var _client                   # Client, when joining
-var _dial                     # Dial, while joining with a code
+var _dial                     # Dial, while joining with a relay code
+var _finder                   # listening for a game on this network with the typed code
+var _listen_until := 0.0
+var _code_client := false     # the client dials an address code: explain a failure in those terms
 var _status := ""
-var _invite := ""
 var _done := false
 
 func setup(p_cfg: Dictionary) -> void:
@@ -69,7 +74,7 @@ func _ready() -> void:
 	music = cfg.get("music")
 	diag = cfg.get("diag")
 	local = mode == "local"
-	networked = mode in ["host", "host_online", "join", "join_code"]
+	networked = mode in ["host", "join", "join_code"]
 	t = Tuning.new()
 	pause = PauseMenu.new(PauseMenu.LOCAL if local else PauseMenu.COMMON, not networked)
 	if diag != null:
@@ -85,7 +90,7 @@ func _ready() -> void:
 			_finish("menu", "Could not load %s: %s" % [level_path.get_file(), lr["error"]])
 			return
 		level = lr["level"]
-		var created := Session.create(level, t, 2 if (local or mode in ["host", "host_online"]) else 1, [], mode != "catch")
+		var created := Session.create(level, t, 2 if (local or mode == "host") else 1, [], mode != "catch")
 		if created["session"] == null:
 			_finish("menu", "Can't start %s on %s: %s" % [mode, level.level_name, created["error"]])
 			return
@@ -95,7 +100,7 @@ func _ready() -> void:
 			inputs = [InputSource.new(InputSource.BLUE_KEYS, 0), InputSource.new(InputSource.RED_KEYS, 1)]
 		else:
 			inputs = [InputSource.new(InputSource.DEFAULT_KEYS, -1)]
-		if mode in ["host", "host_online"] and not _begin_host():
+		if mode == "host" and not _begin_host():
 			return
 		_make_renderer(session.field)
 	_setup_notes()
@@ -148,40 +153,56 @@ func _notes_context() -> String:
 # ------------------------------------------------------------ hosting
 
 func _begin_host() -> bool:
-	var room = null
-	if mode == "host_online":
-		var relay = Invite.relay_address(cfg.get("relay", ""))
-		if relay == null:
-			_finish("menu", Invite.check_relay())
-			return false
-		room = RelayClient.RelayRoom.new(relay)
-	var hr := Host.create({"level": level.to_dict(), "tuning": t.to_dict()}, 2, int(cfg.get("port", Protocol.DEFAULT_PORT)), "0.0.0.0", room)
+	var hr := Host.create({"level": level.to_dict(), "tuning": t.to_dict()}, 2, int(cfg.get("port", Protocol.DEFAULT_PORT)), "0.0.0.0", null)
 	if hr["host"] == null:
 		_finish("menu", hr["error"])
 		return false
 	_host = hr["host"]
-	_room = room
+	var no_router: bool = cfg.get("no_router", false) or OS.get_environment("BALLBRAWLLA_NO_ROUTER") != ""
+	_reach = Reach.new(_host.port, Protocol.lan_ip(), Invite.relay_address(cfg.get("relay", "")), not no_router)
+	_host.room = _reach.room
 	var user := OS.get_environment("USER") if OS.get_environment("USER") != "" else OS.get_environment("USERNAME")
 	_beacon = Discovery.Beacon.new("%s's game" % (user if user != "" else "Player"), level.level_name, _host.port)
 	_status = "hosting on %s:%d" % [Protocol.lan_ip(), _host.port]
 	if diag != null:
-		diag.info("hosting on %s (online=%s)" % [_status, str(room != null)])
+		diag.info("hosting on %s" % _status)
 	return true
 
 func _host_tick() -> void:
-	_beacon.tick(_host.clients.size() < _host.max_players - 1)
 	var r: Dictionary = _host.poll()
 	for pid in r["joined"]:
 		session.set_connected(pid, true)
 	for pid in r["left"]:
 		session.set_connected(pid, false)
-	if _room != null:
-		if _room.error != "" and _invite == "" and not _room.ready:
-			_finish("menu", _room.error)
-			return
-		if _room.ready:
-			_invite = _room.display_code()
-		_status = "hosting on %s:%d   |   invite code %s%s" % [Protocol.lan_ip(), _host.port, _invite, "  (relay lost)" if _room.lost() else ""]
+	var had_code: String = _reach.code()
+	_reach.poll()
+	_host.room = _reach.room                  # null again if the relay failed
+	_beacon.set_codes(_reach.codes())
+	_beacon.tick(_host.clients.size() < _host.max_players - 1)
+	var c: String = _reach.code()
+	if c != "" and c != had_code and diag != null:
+		diag.info("invite code %s - %s" % [Invite.format_code(c), _reach.internet()[1]])
+	var copied := _elapsed - _copied_at < 2.0
+	var net: Array = _reach.internet()
+	_status = "invite code %s (%s)   |   %s: %s   |   %s:%d" % [Invite.format_code(c) if c != "" else "...",
+			"copied!" if copied else "Ctrl+C: copy", net[0], net[2], Protocol.lan_ip(), _host.port]
+
+func _invite_panel() -> Dictionary:
+	if _reach == null:
+		return {}
+	var c: String = _reach.code()
+	return {"code": Invite.format_code(c) if c != "" else "", "lines": _reach.lines(),
+			"copied": _elapsed - _copied_at < 2.0, "test": _test_pid < 0}
+
+## A second copy of the game on this computer that joins this one: try hosting and joining without a second terminal.
+func _open_test_window() -> void:
+	var args: Array = []
+	if not OS.has_feature("template"):          # running from the project folder, not an exported build
+		args += ["--path", ProjectSettings.globalize_path("res://")]
+	args += ["--", "--join=127.0.0.1", "--port=%d" % _host.port]
+	_test_pid = OS.create_process(OS.get_executable_path(), PackedStringArray(args))
+	if diag != null:
+		diag.info("test window: pid %d" % _test_pid)
 
 # ------------------------------------------------------------ joining
 
@@ -189,18 +210,49 @@ func _begin_join() -> void:
 	var address: String = cfg.get("address", "")
 	var port: int = int(cfg.get("port", Protocol.DEFAULT_PORT))
 	if mode == "join_code":
-		var relay = Invite.relay_address(cfg.get("relay", ""))
-		if relay == null:
-			_finish("menu", Invite.check_relay())
-			return
-		_dial = RelayClient.Dial.new(relay, cfg.get("code", ""))
-		_status = "joining %s via the relay ..." % Invite.format_code(cfg.get("code", ""))
+		# First look for a game on this network that advertises the code (a direct connection), briefly.
+		_finder = Discovery.Finder.new()
+		_listen_until = Time.get_ticks_msec() / 1000.0 + (1.3 if _finder.available else 0.0)
+		_status = "joining with code %s ..." % Invite.format_code(cfg.get("code", ""))
 	else:
 		_client = Client.connect_to(address, port)
 		_status = "connecting to %s:%d ..." % [address, port]
 	inputs = [InputSource.new(InputSource.DEFAULT_KEYS, -1)]
 
+## After listening on the network: dial the code's own way (relay code: the relay; address code: that address).
+func _dial_code(code: String) -> void:
+	if Invite.is_relay_code(code):
+		var relay = Invite.relay_address(cfg.get("relay", ""))
+		if relay == null:
+			_finish("menu", Invite.check_relay())
+			return
+		_dial = RelayClient.Dial.new(relay, code)
+		_status = "joining %s through the relay server ..." % Invite.format_code(code)
+	else:
+		cfg["address"] = Invite.code_address(code)
+		cfg["port"] = Protocol.DEFAULT_PORT
+		_code_client = true
+		_client = Client.connect_to(cfg["address"], Protocol.DEFAULT_PORT)
+		_status = "joining %s over the internet ..." % Invite.format_code(code)
+
 func _join_tick() -> void:
+	if _finder != null:
+		var code := Invite.normalize_code(cfg.get("code", ""))
+		var hit = null
+		for g in _finder.poll():
+			if g.codes.has(code):
+				hit = g
+		if hit != null or Time.get_ticks_msec() / 1000.0 >= _listen_until:
+			_finder.close()
+			_finder = null
+			if hit != null:
+				cfg["address"] = hit.address
+				cfg["port"] = hit.port
+				_client = Client.connect_to(hit.address, hit.port)
+				_status = "joining %s on your network ..." % Invite.format_code(code)
+			else:
+				_dial_code(code)
+		return
 	if _dial != null:
 		_dial.poll()
 		if _dial.state == RelayClient.Dial.FAILED:
@@ -213,7 +265,12 @@ func _join_tick() -> void:
 		return
 	_client.poll()
 	if _client.state == Client.FAILED:
-		_finish("menu", "Could not join: %s" % _client.error)
+		if _code_client:
+			_finish("menu", ("Couldn't reach the game with code %s. Check that the host's game is still waiting for a "
+					+ "player, and that their screen says \"Internet: ready\" (or that you're both on the same Wi-Fi). (%s)")
+					% [Invite.format_code(cfg.get("code", "")), _client.error])
+		else:
+			_finish("menu", "Could not join: %s" % _client.error)
 	elif _client.state == Client.READY and renderer == null:
 		var lr = Level.parse(_client.level_data)
 		if lr["level"] == null:
@@ -253,6 +310,14 @@ func _input(event: InputEvent) -> void:
 			_restart()
 		elif action == "debug" and renderer != null:
 			renderer.debug = not renderer.debug
+	if event is InputEventKey and event.pressed and not event.echo and _reach != null:
+		if event.keycode == KEY_C and (event.ctrl_pressed or event.meta_pressed) and _reach.code() != "":
+			DisplayServer.clipboard_set(Invite.format_code(_reach.code()))
+			_copied_at = _elapsed
+			return
+		if event.keycode == KEY_N and _test_pid < 0 and session != null and session.phase == Session.WAITING:
+			_open_test_window()
+			return
 	if event is InputEventKey and event.pressed and not event.echo and renderer != null:
 		match event.keycode:
 			KEY_R: if not local: _restart()
@@ -296,8 +361,14 @@ func _finish(reason: String, message: String) -> void:
 	_done = true
 	if _host != null:
 		_host.close()
+	if _reach != null:
+		_reach.close()
 	if _beacon != null:
 		_beacon.close()
+	if _finder != null:
+		_finder.close()
+	if _test_pid > 0 and OS.is_process_running(_test_pid):
+		OS.kill(_test_pid)
 	if _client != null:
 		_client.close()
 	if notes != null:
@@ -393,7 +464,7 @@ func _draw() -> void:
 		if pause != null:
 			pause.draw(self, size)
 		return
-	renderer.draw(self, size, _last_view, _fps, get_process_delta_time(), _status, _controls_line(), _invite)
+	renderer.draw(self, size, _last_view, _fps, get_process_delta_time(), _status, _controls_line(), _invite_panel())
 	pause.draw(self, size)
 
 func _controls_line() -> String:

@@ -39,13 +39,26 @@ func test_every_mode_check_on_every_level_says_what_python_says() -> void:
 			var got: String = Launch.check_level(mode, infos[k])
 			check_eq(got, want[mode] if want[mode] != null else "", "%s / %s" % [infos[k].key, mode])
 			n += 1
-	check_eq(n, 15 * 8, "combinations checked")
+	check_eq(n, 15 * 7, "combinations checked")
 
 func test_invite_codes_match_python() -> void:
 	for c in _data()["codes"]:
 		check_eq(Invite.normalize_code(c["in"]), c["normal"], "normalize %s" % c["in"])
 		check_eq(Invite.format_code(c["in"]), c["format"], "format %s" % c["in"])
 		check_eq(Invite.check_code(c["in"]), c["check"] if c["check"] != null else "", "check_code '%s'" % c["in"])
+
+func test_address_codes_match_python() -> void:
+	var d := _data()
+	for a in d["address_codes"]:
+		check_eq(Invite.address_code(a["ip"]), a["code"], "address code of %s" % a["ip"])
+		check_eq(Invite.code_address(a["code"]), a["ip"], "address in %s" % a["code"])
+	for c in d["code_addresses"]:
+		check_eq(Invite.code_address(c["in"]), c["ip"] if c["ip"] != null else "", "code_address '%s'" % c["in"])
+
+func test_public_address_check_matches_python() -> void:
+	const Reach = preload("res://scripts/reach.gd")
+	for p in _data()["public"]:
+		check_eq(Reach.is_public(p["ip"]), p["public"], "is_public '%s'" % p["ip"])
 
 func test_relay_address_parsing_matches_python() -> void:
 	for r in _data()["relays"]:
@@ -62,7 +75,7 @@ func test_relay_address_parsing_matches_python() -> void:
 		if r["addr"] != null:
 			check_eq(Invite.check_relay(r["in"]), "", "check_relay accepts '%s'" % r["in"])
 		else:
-			check("No relay server is set" in Invite.check_relay(r["in"]), "check_relay explains the problem")
+			check("no relay server" in Invite.check_relay(r["in"]), "check_relay explains the problem")
 
 func test_address_and_port_checks_match_python() -> void:
 	var d := _data()
