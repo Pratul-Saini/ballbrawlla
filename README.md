@@ -121,7 +121,7 @@ joiner plays one internet round trip behind the host (there's no client-side pre
 
 | Input | Offense | Defense |
 |---|---|---|
-| Arrows / stick (normal movement: run, jump, climb, slide) | Move the QB (1st down only); it can only be confirmed standing on a platform in the yellow zone | Move the Defender; it can only lock in standing on a platform in your zone |
+| Arrows / stick (normal movement: run, jump, wall-jump, slide) | Move the QB (1st down only); it can only be confirmed standing on a platform in the yellow zone | Move the Defender; it can only lock in standing on a platform in your zone |
 | Z / on-screen button | Confirm the QB spot | Lock in |
 | Hold mouse and point, or ←/→ and ↑/↓ | Aim: direction = angle, distance = power | |
 | X / on-screen button | Lock in the throw | Lock in |
@@ -158,8 +158,9 @@ shows the controller's name once it's connected.
 
 Catching is forgiving: pressing Z shortly before the ball arrives, or shortly after it passes, still catches it.
 
-Wall cling: jump into a wall while holding toward it. With no input you slide slowly down;
-press away to wall-jump, press ↑ to climb.
+Wall cling: jump into a wall while holding toward it. With no input you slide slowly down.
+A wall gives you one jump: ↑ hops up it (then you slide down), ↑ + away wall-jumps, or
+press away to drop off and jump once in the air. Walls can't be climbed.
 
 ## Structure
 

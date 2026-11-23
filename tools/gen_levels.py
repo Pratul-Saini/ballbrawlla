@@ -253,8 +253,8 @@ def field_04() -> dict:
 #     going UP a lane needs a connector you choose to use; any gap is a way DOWN.
 #   * Lanes are broken into 4-9 yard segments with jumpable gaps (<= 4 yd) and
 #     small height changes: no long runs on one platform.
-#   * Connectors up: step ledges under gaps (two single jumps), wall-climb pillars,
-#     and a few double-jump spots.
+#   * Connectors up: step ledges under gaps (two single jumps), chimneys (two walls
+#     to wall-jump up between: one wall can't be climbed) and a few double-jump spots.
 #   * Built around the throw (apex ~445 px): a QB on the ground lane can reach the
 #     middle lane, a QB on the middle lane can reach the top lane.
 #   * Mirrored, so both teams face the same field.
@@ -282,8 +282,8 @@ def _steps(b: Builder, y: float, yards, w_yd: float = 1.5) -> None:
 def field_06() -> dict:
     """Scaffold: a building site of steel girders. Ground, girder lane and top
     lane, each broken into short sections that step up and down. Ladders of step
-    ledges sit under the gaps; one wall shaft per side is the quick climb to the
-    top lane. At midfield the top lane is cut, and the way across up there is
+    ledges sit under the gaps; one wall shaft (a chimney) per side is the quick
+    climb to the top lane. At midfield the top lane is cut, and the way across up there is
     over the crown on top of the scaffold."""
     b = Builder("Scaffold", 44, 1700)
     F = b.FLOOR                                  # 1668
@@ -304,15 +304,17 @@ def field_06() -> dict:
     # Ladders: ground -> girders, girders -> top
     _steps(b, S12, [-8.5, 8, 16, 32, 42])
     _steps(b, S23, [-4, 9.5, 20.5, 39.5])
-    # Wall shaft: climb from the girder at the 27 straight up to the top lane
+    # Wall shaft: a chimney from the girder at the 27 up to the top lane at the 31. Wall-jump
+    # between the post on the girder and the one hanging from the top lane's end.
     b.hang(yd(28.5), L3 + 30, (L2 + 40) - (L3 + 30))
+    b.hang(yd(31), L3 + 30, 122)
     return b.build(player_spawn_yards=0, ball_spawn_y=700)
 
 
 def field_07() -> dict:
     """Canopy: a forest. The two upper lanes are one-way branches at uneven
-    heights (jump up through them, land on them from above); tree trunks are the
-    climbs between lanes, with twig steps for anyone who doesn't wall-climb. Roots
+    heights (jump up through them, land on them from above); pairs of tree trunks
+    are chimneys to wall-jump up between lanes, with twig steps for anyone who doesn't. Roots
     break up the ground lane. The crown of the great tree at midfield is the
     highest catch point."""
     b = Builder("Canopy", 44, 1800)
@@ -330,11 +332,15 @@ def field_07() -> dict:
     _lane(b, L3, [(-10, -6), (2, 7, 30), (10, 17, -40), (21, 25, 20), (29, 35, -30), (39, 44, 40),
                   (47, 53, -60)], kind="thin", thick=16)
     _lane(b, L4, [(14, 18), (46, 54)], kind="thin", thick=16)  # lookout and the great tree's crown
-    # Trunks to climb: ground -> branches, branches -> upper branches
-    b.hang(yd(6.2), L2, F - L2, w=28)            # in the gap at the 5-8
-    b.hang(yd(23.2), L2 + 10, F - L2 - 10, w=28)  # in the gap at the 22-25
-    b.hang(yd(27), L3, (L2 + 40) - L3, w=28)     # stands on the branch at the 25-30
-    b.hang(yd(43), L3, (L2 + 30) - L3, w=28)     # stands on the branch at the 41-46
+    # Trunk pairs (chimneys): ground -> branches, branches -> upper branches. One trunk of
+    # each ground pair stops 60 px up, so you walk under it into the chimney.
+    b.hang(yd(5), L2, F - L2, w=28)              # gap at the 5-8: a tree...
+    b.hang(yd(8) - 28, L2 + 20, (F - 60) - (L2 + 20), w=28)  # ...and a hanging trunk
+    b.hang(yd(22), L2 + 10, (F - 60) - (L2 + 10), w=28)      # gap at the 22-25: a hanging trunk...
+    b.hang(yd(25) - 28, L3 + 20, F - (L3 + 20), w=28)        # ...and a tall tree, also the left
+    b.hang(yd(27), L3, (L2 + 40) - L3, w=28)     # side of the chimney on the branch at the 25-30
+    b.hang(yd(41) - 28, L3 + 40, (L2 + 30) - (L3 + 40), w=28)  # chimney on the branch at the 41-46
+    b.hang(yd(43), L3, (L2 + 30) - L3, w=28)
     # Twig steps
     _steps(b, S12, [-7, 14, 31, 39])
     _steps(b, S23, [-3, 8, 18, 36])
@@ -387,7 +393,7 @@ def field_08() -> dict:
 # platforms (crates, perches) that can never reach the next lane. Middle and top
 # floors are solid unless noted, so every way UP is a deliberate switch:
 #   * stair: a zig-zag of one-way steps up through an opening in the upper floor
-#   * climb: a wall standing at the edge of an opening, wall-climbed to the top
+#   * climb: a chimney filling an opening, two walls to wall-jump up between
 # Any gap in a lane is a way DOWN. Bottom<->middle and middle<->top switches sit
 # at different yard lines, so each lane change is its own decision. Only the end
 # zones have one tall stair through all three lanes, so every lane can score.
@@ -404,10 +410,14 @@ def _stair(b: Builder, a: float, lo: float, hi: float, gap_yd: float = 3.0) -> N
         b.thin(b.yd(x), lo - step * i, w)
 
 
-def _climb(b: Builder, a: float, lo: float, hi: float) -> None:
-    """A wall at yard `a` from the upper floor (hi) down to the lower floor (lo).
-    Climb its face from the opening; its top is flush with the upper floor."""
+def _climb(b: Builder, a: float, lo: float, hi: float, far_hi: float, w_yd: float = 3.0) -> None:
+    """A chimney filling the opening from yard `a` to `a + w_yd`: one wall from the upper
+    floor's end (top at `hi`) down to the lower floor (`lo`), and one from the far floor's
+    end (top at `far_hi`) down to 60 px above it, so you walk under it into the chimney.
+    Wall-jump up between them (one wall alone can't be climbed)."""
     b.solid(b.yd(a), hi, 24, lo - hi)
+    x = b.yd(a + w_yd) - 24
+    b.solid(x, far_hi, 24, (lo - 60) - far_hi)
 
 
 def _perches(b: Builder, y: float, spans) -> None:
@@ -422,7 +432,7 @@ def _blocks(b: Builder, floor: float, items) -> None:
 
 def field_09() -> dict:
     """Fortress: courtyard (bottom), ramparts (middle) and battlements (top).
-    Stair towers and climbable walls link the lanes at staggered points; a gate
+    Stair towers and chimneys link the lanes at staggered points; a gate
     blocks the courtyard at midfield and a crown tops the keep."""
     b = Builder("Fortress", 56, 2000)
     F = b.FLOOR                                  # 1968
@@ -443,17 +453,17 @@ def field_09() -> dict:
     _stair(b, -4, F, TOP)                        # end-zone tower: bottom -> middle -> top
     for a, hi in ((4, MID), (21, MID), (37, MID)):
         _stair(b, a, F, hi)                      # bottom -> middle
-    _climb(b, 13, F, MID - 30)                   # bottom -> middle
+    _climb(b, 13, F, MID - 30, MID)              # bottom -> middle
     _stair(b, 9, MID - 30, TOP)                  # middle -> top
     _stair(b, 33, MID, TOP)
-    _climb(b, 26, MID + 30, TOP)
+    _climb(b, 26, MID + 30, TOP, TOP + 30)
     return b.build(player_spawn_yards=-7, ball_spawn_y=600)
 
 
 def field_10() -> dict:
     """Mineshaft: the mine floor (bottom) with ore carts and low galleries, timber
     walkways (middle, one-way) at uneven heights, and the surface (top) with its
-    head-frames. Shafts (stairs) and posts (walls) connect the lanes at staggered
+    head-frames. Shafts (stairs) and post chimneys connect the lanes at staggered
     points; chutes (gaps) drop you down. The crusher blocks the floor at midfield."""
     b = Builder("Mineshaft", 58, 2200)
     F = b.FLOOR                                  # 2168
@@ -475,17 +485,17 @@ def field_10() -> dict:
     _stair(b, -6, F, TOP)                        # end-zone shaft: bottom -> middle -> top
     for a, hi in ((2, MID), (31, MID + 50), (44, MID)):
         _stair(b, a, F, hi)                      # bottom -> middle
-    _climb(b, 17, F, MID - 40)                   # bottom -> middle
+    _climb(b, 17, F, MID - 40, MID)              # bottom -> middle
     _stair(b, 9, MID + 40, TOP)                  # middle -> top
     _stair(b, 24, MID, TOP)
-    _climb(b, 38, MID - 30, TOP)
+    _climb(b, 38, MID - 30, TOP, TOP - 30)
     return b.build(player_spawn_yards=-9, ball_spawn_y=600)
 
 
 def field_11() -> dict:
     """Harbor: the docks (bottom) with piers and crates, ship decks (middle) with
     cabins, and crane gantries (top, one-way). Gangways (stairs) climb from the
-    docks to the decks; masts hang from the gantries to climb from deck to sky.
+    docks to the decks; pairs of masts hang from the gantries, chimneys from deck to sky.
     A breakwater blocks the docks at midfield."""
     b = Builder("Harbor", 60, 2400)
     F = b.FLOOR                                  # 2368
@@ -506,8 +516,11 @@ def field_11() -> dict:
     _stair(b, -4, F, TOP)                        # end-zone gangway: bottom -> middle -> top
     for a, hi in ((3, MID - 20), (15, MID), (29, MID), (41, MID)):
         _stair(b, a, F, hi)                      # gangways: bottom -> middle
-    for a in (10, 24.5):                         # masts: hang from the gantry, bottom 140 px above the deck
+    # Mast pairs: hang from the gantry ends either side of an opening, bottoms 140 px above
+    # the deck. Jump up between them and wall-jump to the gantries.
+    for a, far, far_dy in ((10, 12.5, -40), (24.5, 27, 40)):
         b.solid(b.yd(a), TOP, 24, (MID - 140) - TOP)
+        b.solid(b.yd(far) - 24, TOP + far_dy, 24, (MID - 140) - (TOP + far_dy))
     _stair(b, 36, MID - 30, TOP)                 # middle -> top
     return b.build(player_spawn_yards=-7, ball_spawn_y=700)
 
@@ -518,12 +531,12 @@ def field_11() -> dict:
 # ordinary stairs. Every skill element was tuned on the real physics; the numbers
 # are the timing window a player has (120 ticks = 1 s):
 #
-#   * Kick hatch (lane switch up): a column hangs from the underside of the upper
-#     floor. Climbing it only leads into the ceiling. Climb to the top, wall-jump
-#     toward the opening (skimming the ceiling) and double-jump as you clear the
-#     floor's edge to rise through. The opening is 2.5 yards wide; with it 60 px
-#     from the column the window is a handful of ticks, 40 px is easier. Without
-#     the double jump it can't be done.
+#   * Kick hatch (lane switch up): under the upper floor, near an opening, a column
+#     stands with a 58 px slot between its top and the ceiling, and a wall hangs
+#     70 px behind it. Wall-jump up that chimney into the slot, land on the column,
+#     walk off toward the opening and air-jump as you clear the floor's edge to rise
+#     through. With the column 28-32 px from the edge the window is 7-8 ticks; 16 px is
+#     easier (13). Without the air jump it can't be done.
 #   * Vault: a block cuts the middle lane, with a tunnel through it at balcony
 #     height (220 px up). Double-jump onto the 40 px balcony (~9-tick window, and
 #     only from the right take-off spot), then slide or crawl through. The balcony
@@ -533,16 +546,23 @@ def field_11() -> dict:
 #     the next only with a full jump. Falling drops you a lane.
 
 
-def _kick_hatch(b: Builder, edge_yd: float, lo: float, hi: float, facing: int = 1, D: int = 60) -> None:
+KICK_SLOT, KICK_GAP = 58, 70  # px between the column and the ceiling; chimney width
+
+
+def _kick_hatch(b: Builder, edge_yd: float, lo: float, hi: float, facing: int = 1, D: int = 32) -> None:
     """The upper floor (top at `hi`) ends at `edge_yd`; the opening is on the `facing`
-    side. The column hangs D px back from the edge, from under the upper floor down
-    to 140 px above the lower floor (`lo`), so the lower lane walks under it.
-    The upper floor must be solid and 24 px thick (one-way floors let you climb
-    straight through; thicker ones put the kick out of reach), and the opening
-    2.5 yards wide."""
+    side. The column stands D px back from the edge, from KICK_SLOT px under the
+    ceiling down to 140 px above the lower floor (`lo`), so the lower lane walks under
+    it; the chimney wall hangs from the ceiling KICK_GAP px behind it, to the same
+    height. The upper floor must be solid and 24 px thick (one-way floors let you climb
+    straight through; thicker ones put the kick out of reach), and the opening 2.5
+    yards wide."""
     x_edge = b.yd(edge_yd)
     col_x = x_edge - D - 24 if facing > 0 else x_edge + D
-    b.solid(col_x, hi + 24, 24, (lo - 140) - (hi + 24))
+    wall_x = col_x - KICK_GAP - 24 if facing > 0 else col_x + 24 + KICK_GAP
+    col_top = hi + 24 + KICK_SLOT
+    b.solid(col_x, col_top, 24, (lo - 140) - col_top)
+    b.solid(wall_x, hi + 24, 24, (lo - 140) - (hi + 24))
 
 
 def _vault(b: Builder, a_yd: int, w_yd: int, lo: float, top_y: float, pad_h: int = 220, pad_w: int = 56,
@@ -597,7 +617,7 @@ def field_12() -> dict:
     _stair(b, 41, F, MID)
     _stair(b, 44, MID, TOP)                      # middle -> top
     # Switches: skill
-    _kick_hatch(b, 9, MID, TOP, facing=1, D=60)  # middle -> top through the opening at the 9
+    _kick_hatch(b, 9, MID, TOP, facing=1, D=32)  # middle -> top through the opening at the 9
     return b.build(player_spawn_yards=-7, ball_spawn_y=600)
 
 
@@ -622,8 +642,8 @@ def field_13() -> dict:
     _stair(b, 38, F, MID)
     _stair(b, 25, MID, TOP)                      # middle -> top
     # Switches: skill
-    _kick_hatch(b, 36, MID, TOP, facing=1, D=60)  # hard: opening at the 36
-    _kick_hatch(b, 21, MID, TOP, facing=1, D=40)  # easier: opening at the 21
+    _kick_hatch(b, 36, MID, TOP, facing=1, D=32)  # hard: opening at the 36
+    _kick_hatch(b, 21, MID, TOP, facing=1, D=16)  # easier: opening at the 21
     return b.build(player_spawn_yards=-9, ball_spawn_y=600)
 
 
@@ -650,8 +670,8 @@ def field_14() -> dict:
     _stair(b, 26, F, MID)                        # bottom -> middle
     _stair(b, 4, MID, TOP)                       # middle -> top
     # Switches: skill
-    _kick_hatch(b, 25, MID, TOP, facing=1, D=60)   # opening at the 25
-    _kick_hatch(b, 46, MID, TOP, facing=-1, D=40)  # opening at the 43.5-46, kick to the left
+    _kick_hatch(b, 25, MID, TOP, facing=1, D=28)   # opening at the 25
+    _kick_hatch(b, 46, MID, TOP, facing=-1, D=16)  # opening at the 43.5-46, kick to the left
     return b.build(player_spawn_yards=-7, ball_spawn_y=700)
 
 

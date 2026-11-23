@@ -16,7 +16,7 @@ This folder describes the game as it is implemented today. Each file covers one 
 
 ## The game in one paragraph
 
-A 2-player football platformer. Each down has a play call (both sides run their QB / Defender into place and lock in, the offense aims the throw) and an execution (the WR and Defender run; the QB throws after 10 s; catch, tag, touchdown or interception). 4 downs per possession, first to 5 touchdowns. Players run, jump, double jump, wall-cling and climb, slide and crawl. Rules are in [../gameplay-rules.md](../gameplay-rules.md); the physics `Game` below is driven by the rules `Session`.
+A 2-player football platformer. Each down has a play call (both sides run their QB / Defender into place and lock in, the offense aims the throw) and an execution (the WR and Defender run; the QB throws after 10 s; catch, tag, touchdown or interception). 4 downs per possession, first to 5 touchdowns. Players run, jump, double jump, wall-cling and wall-jump, slide and crawl. Rules are in [../gameplay-rules.md](../gameplay-rules.md); the physics `Game` below is driven by the rules `Session`.
 
 ## How one tick works
 

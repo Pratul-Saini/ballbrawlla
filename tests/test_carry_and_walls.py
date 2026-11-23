@@ -68,7 +68,7 @@ def test_cannot_cling_to_the_same_wall_twice_in_a_row():
     g = make_game(platforms=[WALL], player=(560, 650))
     run(g, ticks=30)
     assert cling_right(g)
-    run(g, Intent(move_x=L, vertical=1))                     # wall-jump away...
+    run(g, Intent(move_x=L, vertical=1, jump_pressed=True))  # wall-jump away...
     states = []
     for _ in range(90):                                       # ...and steer straight back into it
         run(g, Intent(move_x=R, vertical=1))
@@ -94,7 +94,7 @@ def test_alternating_between_two_walls_is_allowed():
     sides = []
     direction = L
     for _ in range(4):
-        run(g, Intent(move_x=direction, vertical=1))          # wall-jump across
+        run(g, Intent(move_x=direction, vertical=1, jump_pressed=True))  # wall-jump across
         for _ in range(60):
             run(g, Intent(move_x=direction, vertical=1))
             if g.player.state.name == "wall_cling":

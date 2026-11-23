@@ -50,6 +50,8 @@ class Tuning:
     wall_jump_y: float = 720
     wall_jump_control_lock: float = 0.18  # seconds air control is ignored after a wall jump
     wall_climb_speed: float = 520     # Up while clinging: hop up the wall
+    wall_jumps: int = 1               # jumps a cling gives: a hop up it, a wall jump, or one air jump after dropping off
+    wall_jump_grace: float = 0.1      # seconds Up and away still count as pressed together
 
     # --- Ball ---
     ball_radius: float = 12

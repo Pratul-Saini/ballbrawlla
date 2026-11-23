@@ -56,13 +56,55 @@ def yd(y: float) -> float:
     return 472 + 44 * y
 
 
-def climb_wall(g: Game, direction: int, hops: int = 10) -> None:
-    """Jump into a wall, hop up it with Up, then keep going over the top."""
+def hop_up_wall(g: Game, direction: int, hops: int = 10) -> None:
+    """The old way up a wall: jump into it and keep pressing Up (now a single hop)."""
     play(g, (Intent(move_x=direction, jump_pressed=True, vertical=1), 1), (Intent(move_x=direction, vertical=1), 12))
     for _ in range(hops):
         play(g, (Intent(move_x=direction, jump_pressed=True, vertical=1), 1), (Intent(move_x=direction, vertical=1), 14))
-    play(g, (Intent(move_x=direction, vertical=1, jump_pressed=True), 1), (Intent(move_x=direction, vertical=1), 40),
-         (Intent(), 40))
+    play(g, (Intent(move_x=direction, vertical=1), 40), (Intent(), 40))
+
+
+def chimney(g: Game, first: int, rise: int = 0) -> None:
+    """Jump straight up for `rise` ticks, lean toward `first`, then wall-jump (Up + away)
+    from every wall and hold toward the next one, until standing somewhere."""
+    p = g.player
+    play(g, (Intent(vertical=1, jump_pressed=True), 1), (Intent(vertical=1), rise))
+    d = first
+    for tick in range(1500):
+        if p.state.name == "wall_cling":
+            d = -p.state.side
+            g.step([Intent(move_x=d, vertical=1, jump_pressed=True)], T.dt)
+        else:
+            g.step([Intent(move_x=d, vertical=1)], T.dt)
+            if tick > 10 and p.state.name == "grounded":
+                break
+    play(g, (Intent(), 20))
+
+
+# Every chimney: (level, start x, start feet y, lean, rise, an upper surface at or above this y)
+CHIMNEYS = [
+    ("field_06", 1793, 1428, L, 6, 1138),    # wall shaft, girder at the 27 -> top lane
+    ("field_07", 758, 1768, R, 6, 1508),     # trunks at the 5-8, ground -> branches
+    ("field_07", 1506, 1768, R, 0, 1528),    # trunks at the 22-25, ground -> branches
+    ("field_07", 1616, 1528, L, 0, 1228),    # trunks on the branch at the 25-30 -> upper branches
+    ("field_07", 2320, 1518, L, 0, 1248),    # trunks on the branch at the 41-46 -> upper branches
+    ("field_09", 1400, 1968, L, 0, 1488),    # opening at the 13, courtyard -> ramparts
+    ("field_09", 2132, 1518, R, 0, 1038),    # opening at the 26, ramparts -> battlements
+    ("field_10", 1685, 2168, R, 0, 1648),    # opening at the 17, floor -> walkways
+    ("field_10", 2857, 1618, R, 0, 1128),    # opening at the 38, walkways -> surface
+    ("field_11", 1320, 1808, L, 0, 1248),    # masts at the 10-12.5, deck -> gantries
+    ("field_11", 2210, 1808, L, 0, 1288),    # masts at the 24.5-27, deck -> gantries
+]
+
+
+@pytest.mark.parametrize("level,x,y,first,rise,up_to", CHIMNEYS)
+def test_chimney_wall_jumps_up_a_lane(level, x, y, first, rise, up_to):
+    g = start(level, x, y)
+    chimney(g, first, rise)
+    assert feet(g)[1] <= up_to
+    g = start(level, x, y)
+    leap(g, 0, double_after=30)                   # a double jump alone falls short
+    assert feet(g)[1] > up_to
 
 
 # ---------------------------------------------------------------- Scaffold (field_06)
@@ -82,9 +124,15 @@ def test_scaffold_girders_are_solid_from_below():
 
 
 def test_scaffold_wall_shaft_climbs_to_the_top_lane():
-    g = start("field_06", 1700, 1428)            # girder at the 27-31, wall just to the right
-    climb_wall(g, R)
+    g = start("field_06", 1793, 1428)            # girder at the 27-31, in the shaft
+    chimney(g, L, 6)
     assert feet(g)[1] == pytest.approx(1138)     # top lane at the 31-38
+
+
+def test_one_wall_alone_cannot_be_climbed():
+    g = start("field_06", 1700, 1428)            # girder at the 27-31, the shaft's post to the right
+    hop_up_wall(g, R)
+    assert feet(g)[1] == pytest.approx(1428)     # one hop, slide down, back on the girder
 
 
 def test_scaffold_crown_over_midfield():
@@ -115,8 +163,8 @@ def test_canopy_branches_are_one_way_from_below():
 
 
 def test_canopy_trunk_climbs_to_the_upper_branches():
-    g = start("field_07", 1630, 1528)            # branch at the 25-30, trunk to the right
-    climb_wall(g, R)
+    g = start("field_07", 1616, 1528)            # branch at the 25-30, between two trunks
+    chimney(g, L)
     assert feet(g)[1] == pytest.approx(1178)     # upper branch at the 29-35
 
 
@@ -186,25 +234,10 @@ def test_fortress_ramparts_are_solid_from_below():
     assert feet(g)[1] == pytest.approx(1968)
 
 
-def climb(g: Game, direction: int) -> None:
-    """Jump straight up, lean into the wall, hop up it until over the top, then step
-    onto the top (no extra jumps once clear of the wall)."""
-    p = g.player
-    play(g, (Intent(vertical=1, jump_pressed=True), 1), (Intent(vertical=1), 25))
-    for tick in range(900):
-        if p.state.name == "wall_cling":
-            g.step([Intent(move_x=direction, vertical=1, jump_pressed=tick % 15 == 0)], T.dt)
-        else:
-            g.step([Intent(move_x=direction, vertical=1)], T.dt)
-            if p.state.name == "grounded":
-                break
-    play(g, (Intent(), 20))
-
-
 def test_fortress_wall_climb_from_courtyard_to_ramparts():
-    g = start("field_09", 1372, 1968)            # in the opening at the 13, wall to the left
-    climb(g, L)
-    assert feet(g)[1] == pytest.approx(1458)
+    g = start("field_09", 1400, 1968)            # in the chimney at the 13
+    chimney(g, L)
+    assert feet(g)[1] == pytest.approx(1458)     # rampart at the 7-13
 
 
 def test_fortress_lanes_switch_at_different_yard_lines():
@@ -226,9 +259,9 @@ def test_fortress_lanes_switch_at_different_yard_lines():
 
 
 def test_harbor_mast_climb_from_deck_to_gantry():
-    g = start("field_11", 1290, 1808)            # deck at the 6-15, mast at the 10 to the left
-    climb(g, L)
-    assert feet(g)[1] == pytest.approx(1248)
+    g = start("field_11", 1320, 1808)            # deck at the 6-15, between the masts at the 10-12.5
+    chimney(g, L)
+    assert feet(g)[1] == pytest.approx(1208)     # gantry at the 12.5-17
 
 
 def test_mineshaft_stair_from_floor_to_walkway():

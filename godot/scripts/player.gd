@@ -22,6 +22,8 @@ var contacts
 var jumps_left: int
 var jump_cut_ready := false
 var control_lock := 0.0
+var wall_jump_grace := 0.0   # just dropped off a wall (away without Up): Up now still wall-jumps
+var wall_jump_side := 0      # the side that wall was on
 var held_ball = null
 var last_wall = null          # the wall I last clung to; I can't re-grab it until I cling elsewhere or land
 var ball = null

@@ -48,55 +48,67 @@ def step(g, intent, n=1):
 
 # ---------------------------------------------------------------- kick hatch
 
-_climbed = {}
+_on_column = {}
+SLOT, GAP = 58, 70  # tools/gen_levels.py KICK_SLOT, KICK_GAP
 
 
-def at_column_top(level, edge_yd, facing, D) -> Game:
-    """Jump up beside the hatch column, cling to it and climb to the ceiling."""
+def on_column(level, edge_yd, facing, D) -> Game:
+    """Wall-jump up the chimney behind the hatch column and land on the column's top,
+    in the slot under the ceiling."""
     key = (level, edge_yd, facing, D)
-    if key in _climbed:
-        return copy.deepcopy(_climbed[key])
+    if key in _on_column:
+        return copy.deepcopy(_on_column[key])
     YD, F, MID, TOP, yd = geom(level)
-    face = yd(edge_yd) - D if facing > 0 else yd(edge_yd) + D
-    g = start(level, face + facing * 14, MID)
-    p = g.player
-    step(g, Intent(vertical=1, jump_pressed=True))
-    step(g, Intent(vertical=1), 20)                                # up past the column's bottom
-    step(g, Intent(move_x=-facing, vertical=1), 10)               # then lean into it
-    for i in range(900):
-        step(g, Intent(move_x=-facing, vertical=1, jump_pressed=(i % 12 == 0)))
-        if p.state.name == "wall_cling" and p.box.top - (TOP + 24) < 2 and abs(p.vel.y) < 1:
-            break
-    assert p.state.name == "wall_cling", "never got to the top of the column"
-    step(g, Intent(move_x=-facing))
-    _climbed[key] = g
-    return copy.deepcopy(g)
+    col_x = yd(edge_yd) - D - 24 if facing > 0 else yd(edge_yd) + D
+    wall_x = col_x - GAP - 24 if facing > 0 else col_x + 24 + GAP
+    mid = (min(col_x, wall_x) + 24 + max(col_x, wall_x)) / 2
+    for rise in range(0, 24, 2):                                   # find a take-off that lands on it
+        g = start(level, mid, MID)
+        p = g.player
+        step(g, Intent(vertical=1, jump_pressed=True))
+        step(g, Intent(vertical=1), rise)
+        d = facing
+        for i in range(900):
+            if p.state.name == "wall_cling":
+                d = -p.state.side
+                step(g, Intent(move_x=d, vertical=1, jump_pressed=True))
+            else:
+                step(g, Intent(move_x=d, vertical=1))
+                if i > 10 and p.state.name == "grounded":
+                    break
+        step(g, Intent(), 10)
+        if p.box.bottom == pytest.approx(TOP + 24 + SLOT):
+            _on_column[key] = g
+            return copy.deepcopy(g)
+    raise AssertionError("never got onto the column")
 
 
 def kick(level, edge_yd, facing, D, t_dj):
-    """From the top of the hatch column, wall-jump toward the opening and double-jump
-    `t_dj` ticks later (None = no double jump). True if it ends on the top lane."""
+    """Standing on the hatch column, run off toward the opening and jump `t_dj` ticks
+    after leaving it (None = no jump). True if it ends on the top lane."""
     YD, F, MID, TOP, yd = geom(level)
-    g = at_column_top(level, edge_yd, facing, D)
+    g = on_column(level, edge_yd, facing, D)
     p = g.player
-    step(g, Intent(move_x=facing, vertical=1))                     # wall jump
-    for t in range(1, 240):
-        step(g, Intent(move_x=facing, vertical=1, jump_pressed=(t == t_dj)))
-        if t > 5 and p.state.name == "grounded":
+    left = None
+    for t in range(360):
+        step(g, Intent(move_x=facing, vertical=1, jump_pressed=(left is not None and t - left == t_dj)))
+        if left is None and p.state.name == "airborne":
+            left = t
+        if left is not None and t - left > 3 and p.state.name == "grounded":
             break
     return p.box.bottom == pytest.approx(TOP)
 
 
-HATCHES = [("field_12", 9, 1, 60), ("field_13", 36, 1, 60), ("field_13", 21, 1, 40),
-           ("field_14", 25, 1, 60), ("field_14", 46, -1, 40)]
+HATCHES = [("field_12", 9, 1, 32), ("field_13", 36, 1, 32), ("field_13", 21, 1, 16),
+           ("field_14", 25, 1, 28), ("field_14", 46, -1, 16)]
 
 
 @pytest.mark.parametrize("level,edge,facing,D", HATCHES)
 def test_kick_hatch_is_a_skill_jump(level, edge, facing, D):
-    window = [t for t in range(1, 60) if kick(level, edge, facing, D, t)]
-    assert 3 <= len(window) <= 14, f"double-jump window {window}"
+    window = [t for t in range(0, 60) if kick(level, edge, facing, D, t)]
+    assert 3 <= len(window) <= 14, f"air-jump window {window}"
     assert window == list(range(window[0], window[-1] + 1)), "window should be one block"
-    assert not kick(level, edge, facing, D, None), "should need the double jump"
+    assert not kick(level, edge, facing, D, None), "should need the air jump"
 
 
 # ---------------------------------------------------------------- vault

@@ -46,7 +46,7 @@ python tools/gen_levels.py [field_NN ...]       # regenerate levels from code
   - `tests/test_level_routes.py`: routes with real physics.
   - `tests/test_skill_routes.py`: timing windows.
 - Geometry rules learned the hard way, enforced in the generator and its tests:
-  - Wall climbing is unlimited, so a wall only works as a skill check if it dead-ends.
+  - Walls can't be climbed: a cling gives one jump (`wall_jumps`): a hop, a wall jump, or an air jump after dropping off. A single tall wall is a dead end; going up needs stairs, ledges or a two-wall chimney.
   - Kick hatches need a solid 24 px floor and a 2.5 yd opening.
   - Vault balconies need 6+ yd of clear runway, with no step within a single jump.
   - A level-design change should come with a physics route test.

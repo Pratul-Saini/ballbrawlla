@@ -2,9 +2,12 @@
 
     Grounded --Up--> Airborne --touch wall + press into it--> WallCling
        |  ^             ^  |                                     |
-  Down |  | release     |  +--land--> Grounded       press away / lose wall
-       v  |             +--------------------------------------+
+  Down |  | release     |  +--land--> Grounded   Up+away (wall jump) / away (drop)
+       v  |             +--------------------------------------+   / lose wall
     Crouch / Slide
+
+    Sticking to a wall gives one jump (wall_jumps): hop up it (Up), wall-jump (Up + away),
+    or drop off (away) and jump once in the air. Walls can't be climbed.
 
     Grounded/Crouch --Z (holding ball)--> Aiming --X throw / Z cancel--> Grounded
 
@@ -49,6 +52,15 @@ def _jump(p: Player, speed: float) -> None:
     p.jump_cut_ready = True
 
 
+def _wall_jump(p: Player, side: int) -> None:
+    """Kick off the wall on `side` (-1 left, +1 right)."""
+    p.vel.update(-side * p.t.wall_jump_x, -p.t.wall_jump_y)
+    p.control_lock = p.t.wall_jump_control_lock
+    p.facing = -side
+    p.wall_jump_grace = 0.0
+    p.jumps_left = 0  # that was the wall's one jump
+
+
 def _face(p: Player, move_x: int) -> None:
     if move_x:
         p.facing = move_x
@@ -67,6 +79,7 @@ class Grounded(State):
     def enter(self, p: Player) -> None:
         p.jumps_left = p.t.air_jumps
         p.control_lock = 0.0
+        p.wall_jump_grace = 0.0
         p.last_wall = None  # back on the ground: any wall can be grabbed again
 
     def update(self, p: Player, intent: Intent, dt: float) -> State | None:
@@ -91,6 +104,13 @@ class Airborne(State):
     def update(self, p: Player, intent: Intent, dt: float) -> State | None:
         if p.contacts.on_ground and p.vel.y >= 0:
             return Grounded()
+
+        # Dropped off a wall a moment ago: Up now is a late "Up + away", a wall jump.
+        if p.wall_jump_grace > 0:
+            p.wall_jump_grace -= dt
+            if intent.jump_pressed and p.jumps_left > 0:
+                _wall_jump(p, p.wall_jump_side)
+                return None
 
         if p.control_lock > 0:
             p.control_lock -= dt
@@ -122,12 +142,14 @@ class WallCling(State):
 
     def __init__(self, side: int) -> None:
         self.side = side  # -1 wall on the left, +1 wall on the right
+        self.hop_timer = 0.0  # just hopped: pressing away now is a late "Up + away"
 
     def enter(self, p: Player) -> None:
         p.last_wall = p.touching_wall(self.side)
         p.vel.update(0, 0)  # stick
-        p.jumps_left = p.t.air_jumps
+        p.jumps_left = p.t.wall_jumps  # one jump from the wall, however you use it
         p.jump_cut_ready = False
+        p.wall_jump_grace = 0.0
         p.facing = -self.side  # face away from the wall
 
     def update(self, p: Player, intent: Intent, dt: float) -> State | None:
@@ -138,14 +160,21 @@ class WallCling(State):
             return Airborne()
 
         p.vel.x = 0
-        if intent.move_x == -self.side:  # press away: wall jump
-            p.vel.update(-self.side * p.t.wall_jump_x, -p.t.wall_jump_y)
-            p.control_lock = p.t.wall_jump_control_lock
-            p.facing = -self.side
+        self.hop_timer = max(0.0, self.hop_timer - dt)
+        away = intent.move_x == -self.side
+        if away and ((intent.jump_pressed and p.jumps_left > 0) or self.hop_timer > 0):
+            _wall_jump(p, self.side)  # Up + away (or a hop a moment ago): wall jump
             return Airborne()
-        if intent.jump_pressed:  # hop up the wall
+        if away:  # away alone: let go and drift off, no upward kick; the jump is kept
+            p.vel.x = -self.side * p.air_speed
+            p.wall_jump_grace = p.t.wall_jump_grace if p.jumps_left > 0 else 0.0
+            p.wall_jump_side = self.side
+            return Airborne()
+        if intent.jump_pressed and p.jumps_left > 0:  # Up alone: hop up the wall
+            p.jumps_left -= 1
             _jump(p, p.t.wall_climb_speed)
             p.jump_cut_ready = False
+            self.hop_timer = p.t.wall_jump_grace
         if intent.move_x == self.side and p.t.wall_hold_sticks and p.vel.y > 0:
             p.vel.y = 0
         return None

@@ -36,8 +36,8 @@ Horizontal movement is **fixed speed**, with no acceleration. A direction held s
 ```
 Grounded --Up--> Airborne --touch wall + press into it--> WallCling
    |  ^             ^  |                                     |
-Down|  |release     |  +--land--> Grounded       press away / lose wall
-    v  |            +--------------------------------------+
+Down|  |release     |  +--land--> Grounded   Up+away (wall jump) / away (drop)
+    v  |            +--------------------------------------+   / lose wall
  Crouch / Slide
 
 Grounded or Crouch --Z (holding ball)--> Aiming --X throw / Z cancel--> Grounded
@@ -61,15 +61,17 @@ While holding the ball, run, slide and crawl speed are multiplied by `carry_spee
 - Steering: `vel.x = move_x * air_speed` (320 px/s), unless `control_lock` is running.
 - Pressing into a wall (`wall_left` with left held, or `wall_right` with right held) becomes WallCling, unless the rest of the current jump will carry the feet above that wall's top (**ledge assist**, `Player.will_clear_wall`). Running up a step you can clear never sticks you to its face.
 - **One cling per wall:** you can't cling to the wall you last clung to (`Player.last_wall`) until you've clung to a different wall or landed. Wall-jumping off a wall and steering back into it just slides you past it; bouncing between two walls (a chimney) still works.
+- **Late wall jump:** for `wall_jump_grace` (0.1 s) after dropping off a wall, Up still wall-jumps off it, so pressing away a moment before Up counts as pressing them together.
 - Up with air jumps left: double jump, `vel.y = -double_jump_speed` (680 px/s), costing one air jump. This **replaces** the vertical velocity, so doing it near the apex gains the most.
 - **Jump cut:** after a jump, releasing Up while still rising multiplies `vel.y` by 0.5 once. A short tap gives a short hop. Holding Up gives the full jump.
 
 ### WallCling
-- Entered from Airborne by pressing into a wall. On entry: the wall is remembered as `last_wall`, velocity zeroed, air jumps refilled, player turns to face away from the wall.
+- Entered from Airborne by pressing into a wall. On entry: the wall is remembered as `last_wall`, velocity zeroed, air jumps set to `wall_jumps` (1): **one jump per wall**, spent on a hop, a wall jump, or an air jump after dropping off (landing restores the double jump), player turns to face away from the wall.
 - Leaves to Grounded if on the ground, or to Airborne if the wall is gone.
 - `vel.x` is held at 0.
-- **Wall jump:** press away from the wall. Sets velocity to (380 px/s away, -720 px/s up), locks air control for 0.18 s, becomes Airborne.
-- **Wall climb:** Up gives a hop of -520 px/s.
+- **Wall jump:** Up + away from the wall. Sets velocity to (380 px/s away, -720 px/s up), locks air control for 0.18 s, becomes Airborne. Up a moment before away (within `wall_jump_grace`, 0.1 s) also counts.
+- **Drop off:** away without Up. Lets go: 320 px/s away, no upward kick, no control lock. The wall's jump is kept, so Up later is one air jump (680 px/s).
+- **Wall hop:** Up alone gives one hop of -520 px/s, using the wall's jump. After that Up does nothing and you slide down (or drop off with no jump): walls can't be climbed.
 - Gravity is full while rising and scaled by 0.3 while falling, with a maximum slide speed of 140 px/s. This is the wall friction.
 - `wall_hold_sticks` (off by default) would stop sliding entirely while pressing into the wall.
 
