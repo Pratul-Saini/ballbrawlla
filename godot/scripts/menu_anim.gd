@@ -118,8 +118,12 @@ func draw(ci: CanvasItem, size: Vector2, t: float, with_players: bool) -> void:
 	var lay := layout(size.x)
 	var p := pose(t, size.x)
 	var thrower_left: bool = p["direction"] == 1
-	_player(ci, lay[0], lay[2], BLUE, 0.0 if thrower_left else p["receiver_lift"], p["thrower_lean"] if thrower_left else 0.0, 1, 0)
-	_player(ci, lay[1], lay[2], RED, p["receiver_lift"] if thrower_left else 0.0, 0.0 if thrower_left else p["thrower_lean"], -1, 1)
+	var local: float = fposmod(t, PERIOD)
+	var catch_u: float = clampf((local - WINDUP - FLIGHT) / CATCH, 0.0, 1.0) if p["phase"] == "catch" else -1.0
+	_player(ci, lay[0], lay[2], BLUE, 0.0 if thrower_left else p["receiver_lift"], p["thrower_lean"] if thrower_left else 0.0, 1, 0,
+			t, -1.0 if thrower_left else catch_u)
+	_player(ci, lay[1], lay[2], RED, p["receiver_lift"] if thrower_left else 0.0, 0.0 if thrower_left else p["thrower_lean"], -1, 1,
+			t + 0.5, catch_u if thrower_left else -1.0)
 	var height: float = maxf(0.0, lay[2] - PLAYER_H * 0.75 - p["y"])
 	_ellipse_at(ci, Vector2(p["x"], lay[2] + 2.0), BALL_W / 2.0, 5.0, Color(0, 0, 0, maxf(30.0, 90.0 - height * 0.5) / 255.0))
 	var ghosts := ball_trail(t, size.x)
@@ -135,16 +139,25 @@ func _ellipse_at(ci: CanvasItem, c: Vector2, rx: float, ry: float, color: Color)
 		pts.append(c + Vector2(cos(a) * rx, sin(a) * ry))
 	ci.draw_colored_polygon(pts, color)
 
-func _player(ci: CanvasItem, cx: float, gy: float, color: Color, lift: float, lean: float, facing: int, team: int = 0) -> void:
-	var spr: Dictionary = sprites.get_sprite(team, facing)
+## `clock` is the animation time in seconds (the animation is a pure function of it, like pose()). `catch_u` is -1 when
+## the player is not jumping for the catch, else how far through the jump he is (0..1): the first half is the rise,
+## the second half the fall.
+func _player(ci: CanvasItem, cx: float, gy: float, color: Color, lift: float, lean: float, facing: int, team: int = 0,
+		clock: float = 0.0, catch_u: float = -1.0) -> void:
+	var spr: Dictionary = {}
+	if sprites.available:
+		if catch_u < 0.0:
+			spr = sprites.get_frame_at(team, facing, "idle", clock)
+		elif catch_u < 0.5:
+			spr = sprites.get_frame_at(team, facing, "jump", catch_u * CATCH)
+		else:
+			spr = sprites.get_frame_at(team, facing, "fall", (catch_u - 0.5) * CATCH)
 	if not spr.is_empty():
 		_ellipse_at(ci, Vector2(cx, gy), PLAYER_W * 0.8, 5.0, c8(20, 72, 36))
-		var src: Rect2 = spr["src"]
-		var k: float = SPRITE_H / src.size.y
-		var dst := Rect2(Vector2(roundf(cx - src.size.x * k / 2.0 + lean * 3.0 * -facing),
-				roundf(gy - src.size.y * k - lift * 34.0)), src.size * k)
+		var k: float = SPRITE_H / PlayerSprites.ART_H
+		var dst: Rect2 = PlayerSprites.dest_rect(spr, cx + lean * 3.0 * -facing, gy - lift * 34.0, k)
 		ci.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		ci.draw_texture_rect_region(spr["tex"], dst, src)
+		ci.draw_texture_rect_region(spr["tex"], dst, spr["src"])
 		return
 	var w := PLAYER_W
 	var h := PLAYER_H

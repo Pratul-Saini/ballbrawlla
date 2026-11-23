@@ -22,6 +22,7 @@ const Notes = preload("res://scripts/notes.gd")
 const PlayerSprites = preload("res://scripts/player_sprites.gd")
 
 const MAX_FRAME_TIME := 0.25
+const INTERP_MAX_STEP := 40.0      # px; one sim step never moves a player this far, so more is a teleport
 const BG := Color(0.094, 0.106, 0.133)
 const SOLID_COL := Color(0.52, 0.56, 0.66)
 const BOUND_COL := Color(0.30, 0.32, 0.38)
@@ -50,7 +51,8 @@ var _elapsed := 0.0
 var _debug := false
 var _done := false
 var sprites := PlayerSprites.new()
-var _run_phase := 0.0
+var _prev_pos := Vector2.ZERO    # the player's position one sim step ago, to draw between steps at any display rate
+var _blend := 1.0                # how far the display frame is from that step to the latest one (0..1)
 var _fx_list: Array = []
 var _prev_jumps := -1
 var _fx_spawned := 0
@@ -159,7 +161,6 @@ func _process(delta: float) -> void:
 	if _done or game == null:
 		return
 	_elapsed += delta
-	_run_phase += delta * 25.0
 	for e in _fx_list:
 		e["age"] += delta
 	_fx_list = _fx_list.filter(func(e): return e["age"] < PlayerSprites.FX_SECONDS)
@@ -172,8 +173,10 @@ func _process(delta: float) -> void:
 		accumulator += minf(delta, MAX_FRAME_TIME)
 	var dt: float = t.dt()
 	while accumulator >= dt:
+		_prev_pos = Vector2(game.player().body.px, game.player().body.py)
 		game.step([_smoke_intent() if _smoke else input.consume(get_viewport(), camera.position, 1.0, false)], dt)
 		accumulator -= dt
+	_blend = 1.0 if frozen else clampf(accumulator / dt, 0.0, 1.0)
 	_follow_camera(delta)
 	queue_redraw()
 	if _smoke and _elapsed > 3.0:
@@ -187,12 +190,21 @@ func _process(delta: float) -> void:
 
 func _snap_camera() -> void:
 	var p = game.player()
+	_prev_pos = Vector2(p.body.px, p.body.py)
 	camera.position = Vector2(p.center_x(), p.center_y())
 	camera.reset_smoothing()
 
+## Where to draw the player's top-left corner: between the previous and the latest sim step, so the 120 Hz simulation
+## looks smooth on any display. A jump of more than a few px in one step (a reset) is shown as it is.
+func _draw_pos(p) -> Vector2:
+	var cur := Vector2(p.body.px, p.body.py)
+	if cur.distance_to(_prev_pos) > INTERP_MAX_STEP:
+		return cur
+	return _prev_pos.lerp(cur, _blend)
+
 func _follow_camera(delta: float) -> void:
 	var p = game.player()
-	var target := Vector2(p.center_x(), p.center_y())
+	var target: Vector2 = _draw_pos(p) + Vector2(p.w / 2.0, p.h / 2.0)
 	camera.position = camera.position.lerp(target, clampf(delta * 8.0, 0.0, 1.0))
 
 # ------------------------------------------------------------ drawing
@@ -209,7 +221,7 @@ func _draw() -> void:
 	var p = game.player()
 	var air: bool = p.state.state_name == "airborne"
 	if air and _prev_air and p.jumps_left < _prev_jumps:
-		_fx_list.append({"x": p.center_x(), "y": p.body.py + p.h, "age": 0.0})
+		_fx_list.append({"x": _draw_pos(p).x + p.w / 2.0, "y": _draw_pos(p).y + p.h, "age": 0.0})
 		_fx_spawned += 1
 	_prev_air = air
 	_prev_jumps = p.jumps_left
@@ -229,25 +241,25 @@ func _draw() -> void:
 		draw_line(start, start + Vector2(d[0], d[1]) * (40.0 + 120.0 * frac), Color(1, 0.9, 0.3), 3.0)
 	_draw_hud(p)
 
-## The player art, bouncing a little while running. Returns the near hand (world px), or Vector2.INF if the art is
+## The player art, animated from his state and speed. Returns the near hand (world px), or Vector2.INF if the art is
 ## missing and a box was drawn instead.
 func _draw_player(p) -> Vector2:
+	var at := _draw_pos(p)
 	var facing: int = int(p.facing)
-	var running: bool = p.state.state_name == "grounded" and absf(p.body.vx) > 20.0
+	var running: bool = p.state.state_name == "grounded" and absf(p.body.vx) > PlayerSprites.RUN_MIN_SPEED
 	if running:
 		facing = 1 if p.body.vx > 0.0 else -1
-	var spr: Dictionary = sprites.get_sprite(0, facing, PLAYER_COL)
+	var spr: Dictionary = {}
+	if sprites.available:
+		spr = sprites.get_frame("player", 0, facing, p.state.state_name, p.body.vx, p.body.vy, get_process_delta_time())
 	if spr.is_empty():
-		draw_rect(Rect2(p.body.px, p.body.py, p.w, p.h), PLAYER_COL)
-		draw_rect(Rect2(p.body.px, p.body.py, p.w, p.h), Color.WHITE, false, 2.0)
+		draw_rect(Rect2(at.x, at.y, p.w, p.h), PLAYER_COL)
+		draw_rect(Rect2(at.x, at.y, p.w, p.h), Color.WHITE, false, 2.0)
 		return Vector2.INF
-	var src: Rect2 = spr["src"]
-	var k: float = p.h / src.size.y * PlayerSprites.VISUAL_SCALE
-	var bob: float = absf(sin(_run_phase)) * 2.0 if running else 0.0
-	var dst := Rect2(Vector2(roundf(p.center_x() - src.size.x * k / 2.0), roundf(p.body.py + p.h - src.size.y * k - bob)),
-			src.size * k)
+	var k: float = PlayerSprites.art_scale(p.h)
+	var dst: Rect2 = PlayerSprites.dest_rect(spr, at.x + p.w / 2.0, at.y + p.h, k)
 	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	draw_texture_rect_region(spr["tex"], dst, src)
+	draw_texture_rect_region(spr["tex"], dst, spr["src"])
 	return dst.position + (spr["hand"] as Vector2) * dst.size
 
 func _draw_hud(p) -> void:
