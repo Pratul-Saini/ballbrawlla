@@ -4,6 +4,8 @@ extends RefCounted
 ## pose(t, width) is a pure function of time, so the animation has no state to get out of step. Each throw takes
 ## PERIOD seconds: wind-up, flight along an arc, catch, hold. Then the players swap roles.
 
+const PlayerSprites = preload("res://scripts/player_sprites.gd")
+
 const PERIOD := 3.6
 const WINDUP := 0.5
 const FLIGHT := 1.8
@@ -12,10 +14,11 @@ const TRAIL := 6                # ghost balls behind the real one
 const TRAIL_STEP := 0.028       # seconds between ghosts
 const SCROLL_PX_PER_S := 18.0
 const STRIPE := 80.0            # px per field stripe
-const BALL_W := 66.0
-const BALL_H := 40.0
+const BALL_W := 42.0
+const BALL_H := 26.0
 const PLAYER_W := 36.0
 const PLAYER_H := 64.0
+const SPRITE_H := 88.0          # drawn height of the player art (puts its hand near where the ball is thrown from)
 const ARC_HEIGHT := 92.0
 const GROUND := 300.0
 
@@ -94,6 +97,7 @@ var LACE := c8(240, 240, 240)
 var SKIN := c8(236, 208, 176)
 var _ellipse := PackedVector2Array()
 var _inner := PackedVector2Array()
+var sprites := PlayerSprites.new()
 
 func _init() -> void:
 	for k in 28:
@@ -114,8 +118,8 @@ func draw(ci: CanvasItem, size: Vector2, t: float, with_players: bool) -> void:
 	var lay := layout(size.x)
 	var p := pose(t, size.x)
 	var thrower_left: bool = p["direction"] == 1
-	_player(ci, lay[0], lay[2], BLUE, 0.0 if thrower_left else p["receiver_lift"], p["thrower_lean"] if thrower_left else 0.0, 1)
-	_player(ci, lay[1], lay[2], RED, p["receiver_lift"] if thrower_left else 0.0, 0.0 if thrower_left else p["thrower_lean"], -1)
+	_player(ci, lay[0], lay[2], BLUE, 0.0 if thrower_left else p["receiver_lift"], p["thrower_lean"] if thrower_left else 0.0, 1, 0)
+	_player(ci, lay[1], lay[2], RED, p["receiver_lift"] if thrower_left else 0.0, 0.0 if thrower_left else p["thrower_lean"], -1, 1)
 	var height: float = maxf(0.0, lay[2] - PLAYER_H * 0.75 - p["y"])
 	_ellipse_at(ci, Vector2(p["x"], lay[2] + 2.0), BALL_W / 2.0, 5.0, Color(0, 0, 0, maxf(30.0, 90.0 - height * 0.5) / 255.0))
 	var ghosts := ball_trail(t, size.x)
@@ -131,7 +135,17 @@ func _ellipse_at(ci: CanvasItem, c: Vector2, rx: float, ry: float, color: Color)
 		pts.append(c + Vector2(cos(a) * rx, sin(a) * ry))
 	ci.draw_colored_polygon(pts, color)
 
-func _player(ci: CanvasItem, cx: float, gy: float, color: Color, lift: float, lean: float, facing: int) -> void:
+func _player(ci: CanvasItem, cx: float, gy: float, color: Color, lift: float, lean: float, facing: int, team: int = 0) -> void:
+	var spr: Dictionary = sprites.get_sprite(team, facing)
+	if not spr.is_empty():
+		_ellipse_at(ci, Vector2(cx, gy), PLAYER_W * 0.8, 5.0, c8(20, 72, 36))
+		var src: Rect2 = spr["src"]
+		var k: float = SPRITE_H / src.size.y
+		var dst := Rect2(Vector2(roundf(cx - src.size.x * k / 2.0 + lean * 3.0 * -facing),
+				roundf(gy - src.size.y * k - lift * 34.0)), src.size * k)
+		ci.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		ci.draw_texture_rect_region(spr["tex"], dst, src)
+		return
 	var w := PLAYER_W
 	var h := PLAYER_H
 	var top := gy - h - lift * 34.0

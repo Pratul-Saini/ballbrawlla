@@ -19,6 +19,7 @@ const Intent = preload("res://scripts/intent.gd")
 const InputSource = preload("res://scripts/input_source.gd")
 const PauseMenu = preload("res://scripts/pause_menu.gd")
 const Notes = preload("res://scripts/notes.gd")
+const PlayerSprites = preload("res://scripts/player_sprites.gd")
 
 const MAX_FRAME_TIME := 0.25
 const BG := Color(0.094, 0.106, 0.133)
@@ -42,10 +43,18 @@ var music = null
 var diag = null
 var _level_name := "field_01"
 var _smoke := false
+var _smoke_double := false   # --double: the scripted run jumps a second time in the air
+var _smoke_jumps := 0        # how many scripted presses have been sent (each lasts exactly one tick)
 var _shot_path := ""
 var _elapsed := 0.0
 var _debug := false
 var _done := false
+var sprites := PlayerSprites.new()
+var _run_phase := 0.0
+var _fx_list: Array = []
+var _prev_jumps := -1
+var _fx_spawned := 0
+var _prev_air := false
 
 func setup(p_cfg: Dictionary) -> void:
 	cfg = p_cfg
@@ -58,6 +67,8 @@ func _ready() -> void:
 				_level_name = arg.substr(8)
 			elif arg == "--smoke":
 				_smoke = true
+			elif arg == "--double":
+				_smoke_double = true
 			elif arg.begins_with("--shot="):
 				_shot_path = arg.substr(7)
 		level_path = "res://levels/%s.json" % _level_name
@@ -133,8 +144,13 @@ func _finish(reason: String, message: String) -> void:
 func _smoke_intent() -> Object:
 	var i = Intent.new()
 	i.move_x = 1 if _elapsed < 1.5 else 0
-	i.jump_pressed = _elapsed > 0.6 and _elapsed < 0.62
-	i.jump_held = i.jump_pressed
+	var due := 1 if _elapsed > 0.6 else 0
+	if _smoke_double and _elapsed > 0.8:
+		due = 2
+	if _smoke_jumps < due:
+		_smoke_jumps += 1
+		i.jump_pressed = true
+	i.jump_held = _smoke_double and _elapsed > 0.6 and _elapsed < 1.1 or i.jump_pressed
 	return i
 
 # ------------------------------------------------------------ loop
@@ -143,6 +159,10 @@ func _process(delta: float) -> void:
 	if _done or game == null:
 		return
 	_elapsed += delta
+	_run_phase += delta * 25.0
+	for e in _fx_list:
+		e["age"] += delta
+	_fx_list = _fx_list.filter(func(e): return e["age"] < PlayerSprites.FX_SECONDS)
 	if diag != null:
 		diag.beat()
 	var frozen: bool = pause.freezes() or notes.is_open
@@ -158,9 +178,9 @@ func _process(delta: float) -> void:
 	queue_redraw()
 	if _smoke and _elapsed > 3.0:
 		var p = game.player()
-		print("SMOKE ok: state=%s x=%.1f y=%.1f on_ground=%s" % [p.state.state_name, p.body.px, p.body.py, str(p.contacts.on_ground)])
+		print("SMOKE ok: state=%s x=%.1f y=%.1f on_ground=%s double_jump_effects=%d" % [p.state.state_name, p.body.px, p.body.py, str(p.contacts.on_ground), _fx_spawned])
 		get_tree().quit()
-	if _shot_path != "" and _elapsed > 1.6:
+	if _shot_path != "" and _elapsed > (0.95 if _smoke_double else 1.6):
 		get_viewport().get_texture().get_image().save_png(_shot_path)
 		print("SHOT saved: ", _shot_path)
 		get_tree().quit()
@@ -187,19 +207,48 @@ func _draw() -> void:
 		if pl.is_thin():
 			draw_rect(Rect2(r.x, r.y, r.w, 3), col.lightened(0.35))
 	var p = game.player()
-	draw_rect(Rect2(p.body.px, p.body.py, p.w, p.h), PLAYER_COL)
-	draw_rect(Rect2(p.body.px, p.body.py, p.w, p.h), Color.WHITE, false, 2.0)
-	var eye_x: float = p.center_x() + p.facing * p.w * 0.22
-	draw_circle(Vector2(eye_x, p.body.py + p.h * 0.28), 3.0, Color.WHITE)
+	var air: bool = p.state.state_name == "airborne"
+	if air and _prev_air and p.jumps_left < _prev_jumps:
+		_fx_list.append({"x": p.center_x(), "y": p.body.py + p.h, "age": 0.0})
+		_fx_spawned += 1
+	_prev_air = air
+	_prev_jumps = p.jumps_left
+	for e in _fx_list:
+		sprites.draw_fx(self, Vector2(e["x"], e["y"]), e["age"], PlayerSprites.FX_SCALE)
+	var hand := _draw_player(p)
 	var b = game.ball
-	draw_circle(Vector2(b.body.px, b.body.py), b.radius, BALL_COL)
-	draw_arc(Vector2(b.body.px, b.body.py), b.radius, 0.0, TAU, 20, Color.WHITE, 1.5)
+	if b.held_by != null and hand != Vector2.INF:
+		PlayerSprites.draw_football(self, hand, b.radius * 1.5, BALL_COL)
+	else:
+		draw_circle(Vector2(b.body.px, b.body.py), b.radius, BALL_COL)
+		draw_arc(Vector2(b.body.px, b.body.py), b.radius, 0.0, TAU, 20, Color.WHITE, 1.5)
 	if p.state.state_name == "aiming":
 		var d: Array = p.aim_direction()
 		var start := Vector2(p.center_x(), p.center_y())
 		var frac: float = (p.aim_power - t.power_min) / (t.power_max - t.power_min)
 		draw_line(start, start + Vector2(d[0], d[1]) * (40.0 + 120.0 * frac), Color(1, 0.9, 0.3), 3.0)
 	_draw_hud(p)
+
+## The player art, bouncing a little while running. Returns the near hand (world px), or Vector2.INF if the art is
+## missing and a box was drawn instead.
+func _draw_player(p) -> Vector2:
+	var facing: int = int(p.facing)
+	var running: bool = p.state.state_name == "grounded" and absf(p.body.vx) > 20.0
+	if running:
+		facing = 1 if p.body.vx > 0.0 else -1
+	var spr: Dictionary = sprites.get_sprite(0, facing, PLAYER_COL)
+	if spr.is_empty():
+		draw_rect(Rect2(p.body.px, p.body.py, p.w, p.h), PLAYER_COL)
+		draw_rect(Rect2(p.body.px, p.body.py, p.w, p.h), Color.WHITE, false, 2.0)
+		return Vector2.INF
+	var src: Rect2 = spr["src"]
+	var k: float = p.h / src.size.y * PlayerSprites.VISUAL_SCALE
+	var bob: float = absf(sin(_run_phase)) * 2.0 if running else 0.0
+	var dst := Rect2(Vector2(roundf(p.center_x() - src.size.x * k / 2.0), roundf(p.body.py + p.h - src.size.y * k - bob)),
+			src.size * k)
+	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	draw_texture_rect_region(spr["tex"], dst, src)
+	return dst.position + (spr["hand"] as Vector2) * dst.size
 
 func _draw_hud(p) -> void:
 	var font := ThemeDB.fallback_font
