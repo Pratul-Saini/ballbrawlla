@@ -133,6 +133,46 @@ def test_defender_is_run_into_place_and_cannot_lock_in_its_forbidden_zone():
     assert c.defense_locked
     assert s.field.yards_from_goal(off, c.def_spot.x) >= 20
     assert c.def_spot.x == pytest.approx(c.def_player.center.x)
+
+
+def _def_crossed_line(df, qb_x, attack_dir) -> bool:
+    """True if the Defender's body has entered the offense's half of `qb_x`."""
+    return df.box.left < qb_x - 1e-6 if attack_dir > 0 else df.box.right > qb_x + 1e-6
+
+
+def test_defender_cannot_cross_the_qb_safe_zone_during_play_call():
+    s = make_session()
+    off = s.down.offense
+    c = s.call
+    qb_x = c.safe_zone_x
+    # Run the Defender hard at the offense's half for a long time.
+    step(s, dfn=Intent(move_x=-off.attack_dir), ticks=200)
+    assert s.field.yards_from_goal(off, c.def_player.center.x) < 20  # it did move upfield
+    assert not _def_crossed_line(c.def_player, qb_x, off.attack_dir)  # but never past the QB's line
+
+
+def test_defender_held_out_of_safe_zone_until_the_ball_is_thrown():
+    s = make_session(pre_throw_seconds=1.0)
+    off = s.down.offense
+    lock_in(s)
+    assert s.phase is Phase.PRE_THROW
+    df = s.game.players[1]
+    qb_x = s.qb.center.x
+    toward_offense = Intent(move_x=-off.attack_dir)
+    # Put the Defender just on its own side of the line, then shove it at the zone.
+    place(df, qb_x + off.attack_dir * 30)
+    step(s, dfn=toward_offense, ticks=30)
+    assert s.phase is Phase.PRE_THROW
+    assert not _def_crossed_line(df, qb_x, off.attack_dir)       # pinned at the line
+    edge = df.box.left if off.attack_dir > 0 else df.box.right
+    assert edge == pytest.approx(qb_x)                           # pressed right up to it
+    # Once the ball is thrown the safe zone lifts and the Defender may pursue across it.
+    step(s, ticks=int(1.0 * s.t.physics_hz) + 2)
+    assert s.phase is Phase.LIVE
+    step(s, dfn=toward_offense, ticks=15)
+    assert _def_crossed_line(df, qb_x, off.attack_dir)
+
+
 def test_execution_starts_as_soon_as_both_lock():
     s = make_session()
     step(s, off=Intent(x_pressed=True))

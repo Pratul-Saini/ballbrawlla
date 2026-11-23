@@ -28,7 +28,7 @@ from ballbrawlla.input import Intent
 from ballbrawlla.rules.down import Down, Outcome, PlayResult
 from ballbrawlla.rules.field import Field, Spot
 from ballbrawlla.rules.match import Match
-from ballbrawlla.rules.play_call import CallMemory, PlayCall
+from ballbrawlla.rules.play_call import CallMemory, PlayCall, clamp_to_safe_zone
 from ballbrawlla.rules.teams import CAN_THROW, Role, Team
 from ballbrawlla.world.level import Level
 
@@ -190,6 +190,11 @@ class Session:
         g.step([off_i, def_i], dt)
 
         if self.phase is Phase.PRE_THROW:
+            # The QB's yard line stays a safe zone until the throw: the Defender
+            # can't cross into the offense's half during the free-running window.
+            if df is not None:
+                clamp_to_safe_zone(df, self.qb.center.x, self.down.offense.attack_dir,
+                                   self.t.player_width)
             self.timer -= dt
             if self.timer <= 0:
                 self.qb.throw()

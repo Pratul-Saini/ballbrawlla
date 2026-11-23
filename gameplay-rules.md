@@ -87,6 +87,7 @@ The Defender must spawn **at least 10 yards past the furthest point the QB could
 | **Place** (only when the down lets the offense pick) | Move the QB with the **same movement as in the play**: run, jump, double jump, wall-jump, slide. It **can only be confirmed while standing on a platform** in the yellow zone (not mid-jump, not clinging to a wall); where it stands becomes its spawn (moved slightly inward if it's on a platform's edge). A green bar under it means it can confirm; a red outline means it can't. **Z / "Confirm QB spot"** confirms. | Move the Defender the same way. It **locks in only while standing on a platform** in your zone. **Z / "Lock in Defender"** locks in. |
 | **Aim** | Hold the mouse and point: the direction is the angle (full circle) and the distance is the power, up to 200px for max. Or use left/right for angle and up/down for power. **X / "Lock in throw"** locks in. Clicking the QB (or Z) goes back to moving it. | |
 
+- **Safe zone:** the QB's yard line is a **safe zone** the Defender may not cross into the offense's half. A dashed line is drawn at the QB's current position; the Defender can move freely on the defense's side of it but is held back at the line (its whole body stays out of the offense's half) [`rules/play_call.py`, `clamp_to_safe_zone`]. This holds throughout the play call and the pre-throw window, and lifts the instant the ball is thrown.
 - **Who sees what:** the QB placement is visible to both sides as it moves. The throw angle and power are **hidden from the defense**, and the Defender's spot is **hidden from the offense** until execution. Each player is only ever sent their own view, so the hidden data never reaches the other machine [`net/view.py`].
 - **Starting values:** the last values that team used. The very first time, the QB is mid-region, the aim is 45° toward the opponent at middle power, and the Defender is 5 yards past its boundary.
 - **Both locked in:** execution starts immediately.
@@ -95,8 +96,8 @@ The Defender must spawn **at least 10 yards past the furthest point the QB could
 ## Phase 2: Execution [`session.py`]
 
 1. The QB, WR and Defender spawn. The WR starts next to the QB, toward the defense's end zone.
-2. **10 seconds of free running.** The QB holds the ball.
-3. The QB **throws automatically** with the locked-in angle and power.
+2. **10 seconds of free running.** The QB holds the ball. The QB's yard line stays a **safe zone**: the Defender still can't cross into the offense's half (see Phase 1), so the WR can get set without pressure.
+3. The QB **throws automatically** with the locked-in angle and power. The safe zone lifts at that moment and the Defender may cross freely.
 4. **Either player can catch it** (Z within reach; catching is forgiving, see the README).
    The player holding the ball runs, slides and crawls at 78% speed (jumps and air speed are unchanged), so the free player wins a straight race and the carrier has to use the level to escape.
 5. If the ball **stops moving** (it has come to rest and is slower than 8px/s), there are **3 seconds** to pick it up. Otherwise the play is dead. Picking it up within that window makes it live again.

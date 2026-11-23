@@ -59,6 +59,8 @@ static func make_view(s, pid: int, local: bool = false) -> Dictionary:
 			call["def_ok"] = c.def_ok
 		v["call"] = call
 		v["timer"] = _r(c.timer)
+		if s.defender:   # QB's line: the Defender can't cross it into the offense's half yet
+			v["safe_zone_x"] = _r(c.safe_zone_x())
 	if s.game != null and (s.phase == Session.PRE_THROW or s.phase == Session.LIVE or s.phase == Session.DEAD):
 		var players: Array = s.game.players
 		var actors := [_actor(s.qb)]
@@ -72,6 +74,8 @@ static func make_view(s, pid: int, local: bool = false) -> Dictionary:
 		}
 		if s.phase == Session.PRE_THROW:
 			v["timer"] = _r(s.timer)
+			if s.defender:   # the QB's line stays a safe zone until the throw
+				v["safe_zone_x"] = _r(s.qb.center_x())
 			if local or side == "offense":   # your own locked-in throw
 				v["aim"] = [_r(s.qb.aim_angle), _r(s.qb.aim_power)]
 		elif s.phase == Session.LIVE and s.loose_timer != null:

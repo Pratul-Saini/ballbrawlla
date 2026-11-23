@@ -199,6 +199,9 @@ func _step_execution(off_i, def_i, dt: float) -> void:
 	var df = g.players[1] if g.players.size() > 1 else null   # null in catch practice
 	g.step([off_i, def_i], dt)
 	if phase == PRE_THROW:
+		# The QB's yard line stays a safe zone until the throw: the Defender can't cross into the offense's half.
+		if df != null:
+			PlayCall.clamp_to_safe_zone(df, qb.center_x(), Teams.attack_dir(down().offense), t.player_width)
 		timer -= dt
 		if timer <= 0.0:
 			qb.throw()

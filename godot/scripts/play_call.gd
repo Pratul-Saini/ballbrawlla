@@ -93,6 +93,24 @@ func done() -> bool:
 func qb_center() -> Array:
 	return [qb_player.center_x(), qb_player.center_y()]
 
+## The QB's yard line. The Defender may not cross it into the offense's half until the ball is thrown.
+func safe_zone_x() -> float:
+	return qb_center()[0]
+
+## Keep the Defender out of the offense's safe zone: the territory on the offense's side of the QB's yard line.
+## The Defender's whole body is held on the defense's side of qb_x and any velocity carrying it across is stopped.
+static func clamp_to_safe_zone(defender, qb_x: float, attack_dir: int, width: float) -> void:
+	var b = defender.body
+	if attack_dir > 0:            # offense attacks right: safe zone is x < qb_x
+		if b.px < qb_x:           # the Defender's left edge crossed the line
+			b.px = qb_x
+			b.vx = maxf(0.0, b.vx)
+	else:                         # offense attacks left: safe zone is x > qb_x
+		var right_limit: float = qb_x - width
+		if b.px > right_limit:    # the Defender's right edge crossed the line
+			b.px = right_limit
+			b.vx = minf(0.0, b.vx)
+
 func remember(memory) -> void:
 	if down.offense_picks_spawn():
 		memory.qb_target[down.offense] = qb_spot
@@ -169,6 +187,7 @@ func _update_defense(i, dt: float) -> void:
 	if defense_locked:
 		return
 	_move(def_player, i, dt)
+	clamp_to_safe_zone(def_player, safe_zone_x(), load("res://scripts/teams.gd").attack_dir(down.offense), t.player_width)
 	var r := _standing_spot(def_player, def_lo, def_hi)
 	def_ok = r[1]
 	if def_ok:

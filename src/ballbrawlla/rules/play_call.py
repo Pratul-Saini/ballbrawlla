@@ -42,6 +42,25 @@ class CallMemory:
     def_target: dict[Team, Spot] = field(default_factory=dict)
 
 
+def clamp_to_safe_zone(defender: Player, qb_x: float, attack_dir: int, width: float) -> None:
+    """Keep the Defender out of the offense's safe zone.
+
+    Until the ball is thrown, the territory on the offense's side of the QB's
+    yard line (the line of scrimmage) is a safe zone: the Defender may not enter
+    it. The Defender's whole body is held on the defense's side of `qb_x`, and
+    any velocity carrying it across is stopped. `attack_dir` is the offense's."""
+    body = defender.body
+    if attack_dir > 0:            # offense attacks right: safe zone is x < qb_x
+        if body.pos.x < qb_x:     # the Defender's left edge crossed the line
+            body.pos.x = qb_x
+            body.vel.x = max(0.0, body.vel.x)
+    else:                         # offense attacks left: safe zone is x > qb_x
+        right_limit = qb_x - width
+        if body.pos.x > right_limit:  # the Defender's right edge crossed the line
+            body.pos.x = right_limit
+            body.vel.x = min(0.0, body.vel.x)
+
+
 class PlayCall:
     def __init__(
         self,
@@ -108,6 +127,12 @@ class PlayCall:
     def qb_center(self) -> Vector2:
         """Where the QB is drawn and aimed from."""
         return Vector2(self.qb_player.center)
+
+    @property
+    def safe_zone_x(self) -> float:
+        """The QB's yard line. The Defender may not cross it into the offense's
+        half until the ball is thrown."""
+        return self.qb_center().x
 
     def remember(self, memory: CallMemory) -> None:
         if self.down.offense_picks_spawn:
@@ -187,6 +212,8 @@ class PlayCall:
         if self.defense_locked:
             return
         self._move(self.def_player, i, dt)
+        clamp_to_safe_zone(self.def_player, self.safe_zone_x, self.down.offense.attack_dir,
+                           self.t.player_width)
         spot, self.def_ok = self._standing_spot(self.def_player, self.def_lo, self.def_hi)
         if self.def_ok:
             self.def_spot = spot
