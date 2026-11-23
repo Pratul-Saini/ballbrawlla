@@ -27,7 +27,7 @@ def test_codes_normalize_format_and_validate():
     assert normalize_code(" kq7-m3x ") == "KQ7M3X"
     assert format_code("kq7m3x") == "KQ7-M3X"
     assert check_code("kq7 m3x") is None
-    assert "6 characters" in check_code("KQ7M3")
+    assert "8 characters" in check_code("KQ7M3")
     assert "never use 0, O, 1, I or L" in check_code("KQ7M30")
     assert "Type the invite code" in check_code("  ")
 
@@ -35,12 +35,41 @@ def test_codes_normalize_format_and_validate():
 def test_relay_address_sources(monkeypatch):
     monkeypatch.setattr(invite, "DEFAULT_RELAY", "")
     monkeypatch.delenv(invite.RELAY_ENV, raising=False)
-    assert relay_address() is None and "No relay server" in check_relay()
+    assert relay_address() is None and "no relay server" in check_relay()
     monkeypatch.setenv(invite.RELAY_ENV, "relay.example.com")
     assert relay_address() == ("relay.example.com", invite.RELAY_PORT)
     assert relay_address("10.0.0.5:6000") == ("10.0.0.5", 6000)        # --relay wins over the environment
     assert relay_address("[::1]:6000") == ("::1", 6000)
     assert check_relay() is None
+
+
+def test_parse_relay_accepts_addresses_and_explains_bad_ones():
+    assert invite.parse_relay("") is None
+    assert invite.parse_relay("relay.example.com") == ("relay.example.com", invite.RELAY_PORT)
+    assert invite.parse_relay("::1") == ("::1", invite.RELAY_PORT)
+    assert invite.parse_relay("[fe80::1]:7000") == ("fe80::1", 7000)
+    assert "port number" in invite.check_relay_text("example.com:99999")
+    assert "port number" in invite.check_relay_text("example.com:abc")
+    assert "isn't a server address" in invite.check_relay_text("http://x/y")
+    assert invite.check_relay_text("") is None
+
+
+def test_saved_relay_is_used_and_the_environment_wins(monkeypatch):
+    from ballbrawlla import settings
+    monkeypatch.setattr(invite, "DEFAULT_RELAY", "")
+    monkeypatch.delenv(invite.RELAY_ENV, raising=False)
+    settings.save(relay="saved.example.com:7000")
+    assert relay_address() == ("saved.example.com", 7000)
+    monkeypatch.setenv(invite.RELAY_ENV, "env.example.com")
+    assert relay_address() == ("env.example.com", invite.RELAY_PORT)
+    settings.settings_path().write_text("{broken")                     # a damaged file is ignored, not fatal
+    monkeypatch.delenv(invite.RELAY_ENV)
+    assert relay_address() is None
+
+
+def test_background_relay_reports_a_taken_port(relay):
+    with pytest.raises(OSError, match=f"port {relay.port}"):
+        BackgroundRelay(port=relay.port)
 
 
 # ---------------------------------------------------------------- relay

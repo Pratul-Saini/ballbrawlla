@@ -3,7 +3,8 @@ extends RefCounted
 ## (src/ballbrawlla/launch.py). Every check returns a plain-language reason when it fails, or "" when the launch is
 ## fine, so the caller decides how to show it: the menu greys the option out, a command line would print one line.
 ##
-## Modes: "practice", "catch", "local", "host", "join", "host_online", "join_code", "sandbox".
+## Modes: "practice", "catch", "local", "host", "join", "join_code", "sandbox". "host" gets an invite code that
+## works on the same network and, when possible, over the internet; "join_code" joins with one.
 
 const Level = preload("res://scripts/level.gd")
 const Field = preload("res://scripts/field.gd")
@@ -12,11 +13,11 @@ const Invite = preload("res://scripts/invite.gd")
 
 const LEVELS_DIR := "res://levels"
 const DEFAULT_PORT := 50555
-const MATCH_MODES := ["practice", "catch", "local", "host", "host_online"]   # football rules: need a football field
-const ALL_MODES := ["practice", "catch", "local", "host", "join", "host_online", "join_code", "sandbox"]
+const MATCH_MODES := ["practice", "catch", "local", "host"]   # football rules: need a football field
+const ALL_MODES := ["practice", "catch", "local", "host", "join", "join_code", "sandbox"]
 const MODE_LABELS := {
 	"practice": "Practice", "catch": "Catch practice", "local": "Two players", "host": "Host a game",
-	"join": "Join a game", "host_online": "Host online", "join_code": "Join with code", "sandbox": "Explore",
+	"join": "Join a game", "join_code": "Join with code", "sandbox": "Explore",
 }
 
 ## What the menu knows about a level file without playing it.
@@ -139,7 +140,9 @@ static func check_launch(mode: String, level_path: String = "", port: int = DEFA
 		return a if a != "" else check_port_number(port)
 	if mode == "join_code":
 		var c := Invite.check_code(code)
-		return c if c != "" else Invite.check_relay()
+		if c != "":
+			return c
+		return Invite.check_relay() if Invite.is_relay_code(code) else ""
 	if not FileAccess.file_exists(level_path):
 		return "Level \"%s\" was not found. Levels live in the levels folder (for example field_01)." % level_path.get_file().get_basename()
 	var r := Level.load_file(level_path)
@@ -151,7 +154,4 @@ static func check_launch(mode: String, level_path: String = "", port: int = DEFA
 			return check_level(mode, inspect_level(level_path))
 	if mode == "host":
 		return check_port(port)
-	if mode == "host_online":
-		var rl := Invite.check_relay()
-		return rl if rl != "" else check_port(port)
 	return ""

@@ -18,10 +18,9 @@ Options go after the double dash. A launch that cannot work prints one line and 
 | `--catch` | catch practice: football rules, no defender |
 | `--local` | two players on one screen |
 | `--sandbox` | free play (the arena unless `--level` says otherwise) |
-| `--host` | host a game on this network (`--port=N` changes the port) |
-| `--host` `--online` `--relay=ADDR` | host with an invite code through a relay server |
-| `--join=ADDRESS` | join a game |
-| `--join-code=CODE` `--relay=ADDR` | join with an invite code |
+| `--host` | host a game: shows an invite code (`--port=N` changes the port, `--no-router` skips opening it on the router, `--relay=ADDR` uses a relay server) |
+| `--join-code=CODE` | join with the host's invite code (`--relay=ADDR` for 6-character relay codes) |
+| `--join=ADDRESS` | join a game by address |
 
 Everything in the Python game is here: the launcher with the animated backdrop, the level picker, the in-game menu (Esc),
 session notes (F2), music (M mutes), per-run logs, LAN discovery, hosting and joining, and invite codes.
@@ -80,8 +79,9 @@ Logs and notes go to `~/Library/Application Support/Gridiron Scramble/` (Windows
 
 ## Known limits
 
-- Online play through invite codes needs a relay server and none is deployed (`DEFAULT_RELAY` in `scripts/invite.gd` is
-  empty). The relay itself is still the Python one (`python -m ballbrawlla.net.relay_server`).
+- Playing across the internet works when the host's router opens the game's port (UPnP, `scripts/reach.gd`); no relay
+  server is deployed (`DEFAULT_RELAY` in `scripts/invite.gd` is empty), and the relay itself is the Python one
+  (`python -m ballbrawlla.net.relay_server`).
 - Nobody has played the Godot version with a keyboard, a mouse or a controller yet; it has been run, tested and looked at
   in screenshots.
 - The Windows build has not been run on Windows. The exported Mac app has been run and tested.

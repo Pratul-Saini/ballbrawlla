@@ -221,23 +221,34 @@ class Relay:
 
 
 class BackgroundRelay:
-    """A relay on its own thread and event loop, for tests and for trying online play on one machine."""
+    """A relay on its own thread and event loop: for tests, and run inside the game when a player hosts with
+    the relay set to this computer. Raises OSError if it can't listen (the port is taken, for example)."""
 
     def __init__(self, bind: str = "127.0.0.1", port: int = 0, **kwargs) -> None:
         self.relay = Relay(**kwargs)
         self.loop = asyncio.new_event_loop()
         ready = threading.Event()
+        failed: list[OSError] = []
 
         def run() -> None:
             asyncio.set_event_loop(self.loop)
-            self.server = self.loop.run_until_complete(self.relay.start(bind, port))
+            try:
+                self.server = self.loop.run_until_complete(self.relay.start(bind, port))
+            except OSError as e:
+                failed.append(e)
+                ready.set()
+                return
             self.port = self.server.sockets[0].getsockname()[1]
             ready.set()
             self.loop.run_forever()
 
         self.thread = threading.Thread(target=run, name="relay", daemon=True)
         self.thread.start()
-        ready.wait(5)
+        if not ready.wait(5) or failed:
+            self.thread.join(1)
+            self.loop.close()
+            why = failed[0].strerror if failed and failed[0].strerror else (failed[0] if failed else "timed out")
+            raise OSError(f"Could not run a relay server on port {port} ({why}).")
         self.address = (bind, self.port)
 
     def close(self) -> None:

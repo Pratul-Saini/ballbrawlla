@@ -1,16 +1,47 @@
 # Networking (host and join)
 
-Source: `net/protocol.py`, `net/host.py`, `net/client.py`, `net/view.py`, `net/invite.py`, `net/relay_server.py`,
-and the loops in `main.py`.
+Source: `net/protocol.py`, `net/host.py`, `net/client.py`, `net/view.py`, `net/discovery.py`, `net/online.py`,
+`net/upnp.py`, `net/invite.py`, `net/relay_server.py`, and the loops in `main.py`. The Godot port mirrors it in
+`godot/scripts/` (`reach.gd` is `online.Reach` + `upnp.PortOpener`).
+
+Players do everything from the menu: **Online → Host game** shows an invite code, **Online → Join game** takes it.
+The command line does the same:
 
 ```
-python -m ballbrawlla --host               # prints "Hosting on 192.168.x.y:50555"
-python -m ballbrawlla --join 192.168.x.y   # --port N on both sides to change it
-python -m ballbrawlla --host --online      # also opens the game on the relay: prints an invite code
-python -m ballbrawlla --join-code KQ7-M3X  # join through the relay, from any network
+python -m ballbrawlla --host                  # shows the invite code on the waiting screen (and prints it)
+python -m ballbrawlla --join-code 2JDH-GC8A   # join with it
+python -m ballbrawlla --join 192.168.x.y      # or by address; --port N on both sides to change it
+python -m ballbrawlla --host --no-router      # don't ask the router to open the port
 ```
 
-To test on one machine, host in one terminal and join `127.0.0.1` in another. Both sides must run the same code (`PROTOCOL_VERSION` is checked).
+To test on one machine, press **N** on the host's waiting screen: a second copy of the game opens and joins
+(`main.open_test_window`). Both sides must run the same code (`PROTOCOL_VERSION` is checked).
+
+## Invite codes and reachability (`net/online.py`, `net/upnp.py`)
+
+One code per hosted game, decided by `online.Reach` in a thread while the waiting screen shows "getting your code":
+
+| Situation | Code | "Internet" line |
+|---|---|---|
+| a relay server is set and answers | relay room code, 6 characters (`KQ7-M3X`) | ready (through the relay server) |
+| no relay; the router opened the port (UPnP) | address code of the **public** IP, 8 characters (`2JDH-GC8A`) | ready |
+| no relay; the router can't or won't | address code of the **LAN** IP | not available, with the reason and the fix |
+
+- **Address codes** (`invite.address_code` / `code_address`): an IPv4 address `v` packed as `v * 198 + v % 197` in
+  8 base-31 characters. A mistyped character is caught (about 99.7% of single typos) instead of dialling a stranger.
+  Codes assume the standard port 50555; on another port there is no code and the LAN address is shown instead.
+- **LAN first:** the host's beacon (`net/discovery.py`) lists its codes. A joiner who types a code connects straight
+  to a game on the same network that advertises it (the menu checks the games it already heard; `--join-code`
+  listens for 1.3 s). This also sidesteps routers that can't loop a public address back inside the network.
+- **Opening the port** (`upnp.PortOpener`, standard library only): SSDP M-SEARCH for an Internet Gateway Device, read
+  its description for the WANIPConnection/WANPPPConnection control URL, then SOAP `GetExternalIPAddress` and
+  `AddPortMapping` (TCP 50555 -> this computer, 1 h lease renewed every 25 min; permanent if the router only
+  allows that), and `DeletePortMapping` when the game ends. A router whose own public address is private or in
+  100.64.0.0/10 sits behind another NAT (double NAT, carrier NAT): reported as not reachable. Godot uses its
+  built-in `UPNP` class the same way.
+- Every failure is a sentence a player can act on: router didn't answer (UPnP off), port taken by another computer
+  (UPnP error 718), behind another router or carrier NAT, refused (error N). Each ends with "turn on UPnP, or
+  forward TCP port 50555 to <LAN IP>. Players on the same Wi-Fi can join either way."
 
 ## Who does what
 
@@ -62,15 +93,17 @@ joiner            -> {"t":"join","v":1,"code":"KQ7M3X"}
                   <- {"t":"ok"} then raw bytes  | {"t":"error","reason":..}
 ```
 
-- **`RelayRoom`** (host side) is polled by `Host.poll()`. Sockets it returns go into the same pending list
-  as LAN connections, so hello/welcome, "game is full" and version checks are shared. The LAN listener stays
-  open too. If the control connection drops, the running match continues but nobody new can join
+- **`RelayRoom`** (host side) is opened by `online.Reach` and handed to the `Host` (`host.room`), which polls it.
+  Sockets it returns go into the same pending list as LAN connections, so hello/welcome, "game is full" and
+  version checks are shared. The LAN listener stays open too. If the control connection drops, the running match continues but nobody new can join
   (the status line says so).
-- **`dial()` / `Client.via_code()`** (joiner side) waits for `ok`, then runs the normal handshake.
+- **`dial()` / `Client.via_code()`** (joiner side, from `online.connect`) waits for `ok`, then runs the normal handshake.
 - **Codes**: 6 characters from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, displayed `KQ7-M3X`. `normalize_code`
   ignores case, spaces and dashes. The `key` from `room` stops anyone else from claiming a joiner.
-- **Relay address**: `--relay HOST[:PORT]` > `BALLBRAWLLA_RELAY` > `DEFAULT_RELAY`. The default port is 50600.
-  The menu greys out the online options when none is set.
+- **Relay address**: `--relay HOST[:PORT]` / `BALLBRAWLLA_RELAY` > `relay` in `settings.json` (`settings.py`) >
+  `DEFAULT_RELAY`. The default port is 50600. With none set, hosts use address codes, and a typed 6-character
+  code is explained ("that is a relay server code ... ask for the 8-character one"). If the relay is set but
+  doesn't answer, the host falls back to the router.
 - **Limits** (constants in `relay_server.py`): 500 rooms, 4 rooms per IP, 20 wrong codes per IP per minute,
   10 s to send the first line, 10 s for the host to answer a joiner, 1 KiB handshake lines.
 - **Not encrypted.** The relay operator could read game messages. The relay only ever connects a joiner

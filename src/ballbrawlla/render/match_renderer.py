@@ -165,9 +165,11 @@ class MatchRenderer:
     # ------------------------------------------------------------ main
 
     def draw(self, view: dict, fps: float, dt: float, status: str = "", controls: str = "",
-             invite: str | None = None) -> None:
+             invite: dict | None = None) -> None:
         """`status` (e.g. network state) is always shown; `controls` (the key list)
-        only while show_controls is on. `invite`: the online host's invite code, shown big while waiting."""
+        only while show_controls is on. `invite`: the host's invite panel, shown while waiting for the other
+        player: {"code": "KQ7M-3XPA" or None while it's being worked out, "lines": [(label, text, state)],
+        "copied": bool, "test": bool (offer N: open a test window)}."""
         if view.get("local"):
             self.camera.frame(self._focus_points(view), self.level, dt, top_inset=self.hud_h)
         else:
@@ -186,18 +188,53 @@ class MatchRenderer:
         if invite and phase == "waiting":
             self._draw_invite(invite)
 
-    def _draw_invite(self, code: str) -> None:
+    def _wrapped(self, text: str, width: int) -> list[str]:
+        lines, line = [], ""
+        for word in text.split():
+            if line and self.font.size(f"{line} {word}")[0] > width:
+                lines.append(line)
+                line = word
+            else:
+                line = f"{line} {word}".strip()
+        return lines + [line] if line else lines
+
+    def _draw_invite(self, invite: dict) -> None:
+        """The host's waiting panel: the code to share, and who can join (same Wi-Fi / internet)."""
+        colors = {"ready": SPOT_OK, "checking": BANNER, "unavailable": (255, 170, 160)}
         vw, vh = self.screen.get_size()
-        box = pygame.Rect(0, 0, 560, 150)
+        w = min(760, vw - 40)
+        label_w = 120
+        body = []
+        for label, text, state in invite["lines"]:
+            wrapped = self._wrapped(text, w - 60 - label_w)
+            body.append((label, wrapped, colors.get(state, DIM)))
+        line_h = self.font.get_linesize()
+        h = 150 + sum(len(b[1]) for b in body) * line_h + len(body) * 6 + (30 if invite.get("test") else 0)
+        box = pygame.Rect(0, 0, w, h)
         box.center = (vw // 2, vh // 2)
         pygame.draw.rect(self.screen, (16, 17, 22), box, border_radius=10)
         pygame.draw.rect(self.screen, BANNER, box, 2, border_radius=10)
-        self._text("Invite code", (box.centerx, box.y + 16), DIM, center=True)
+        self._text("Waiting for the other player. Send them this invite code:", (box.centerx, box.y + 14), DIM,
+                   center=True)
         if self._invite_font is None:
             self._invite_font = pygame.font.Font(None, 84)
-        self._text(code, (box.centerx, box.y + 44), BANNER, self._invite_font, center=True)
-        self._text("Share it with the other player. Ctrl+C copies it.", (box.centerx, box.bottom - 30), DIM,
-                   center=True)
+        code = invite.get("code")
+        if code:
+            self._text(code, (box.centerx, box.y + 40), BANNER, self._invite_font, center=True)
+            hint = "copied!" if invite.get("copied") else "Ctrl+C copies it. They pick JOIN GAME and type it."
+        else:
+            self._text("getting your code...", (box.centerx, box.y + 56), DIM, center=True)
+            hint = ""
+        self._text(hint, (box.centerx, box.y + 104), DIM, center=True)
+        y = box.y + 136
+        for label, wrapped, color in body:
+            self._text(f"{label}:", (box.x + 30, y), DIM)
+            for k, line in enumerate(wrapped):
+                self._text(line, (box.x + 30 + label_w, y + k * line_h), color)
+            y += len(wrapped) * line_h + 6
+        if invite.get("test"):
+            self._text("No second player handy? N opens a second window on this computer that joins.",
+                       (box.centerx, box.bottom - 28), DIM, center=True)
 
     def _camera_target(self, view: dict) -> Vector2:
         h = self.t.player_height

@@ -15,7 +15,8 @@ from ballbrawlla.version import __version__
 
 # ---------------------------------------------------------------- paths
 
-def test_source_checkout_keeps_levels_and_logs_in_the_repo():
+def test_source_checkout_keeps_levels_and_logs_in_the_repo(monkeypatch):
+    monkeypatch.delenv("BALLBRAWLLA_HOME", raising=False)          # conftest points it at a temp folder
     root = Path(__file__).resolve().parents[1]
     assert paths.levels_dir() == root / "levels" and paths.levels_dir().is_dir()
     assert paths.logs_dir() == root / "logs"

@@ -12,7 +12,6 @@ import argparse
 import os
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,8 +27,9 @@ CASES = [
     (["--local", "--level=arena_01"], 2, "football field"),
     (["--sandbox", "--level=field_99"], 2, "not found"),
     (["--join-code=ABC-123"], 2, "can't contain 1"),
-    (["--join-code=KQ7-M3X"], 2, "No relay server"),
-    (["--host", "--online", "--level=field_01"], 2, "No relay server"),
+    (["--join-code=KQ7-M3X"], 2, "relay server code"),
+    (["--join-code=2JDH-GC8B"], 2, "typo"),
+    (["--host", "--no-router", "--level=field_01", "--port=50977"], None, ""),
     (["--host", "--local"], 2, "only one"),
     (["--join=1.2.3.4", "--catch"], 2, "only one"),
     (["--level=field_01", "--port=abc"], 2, "number"),
@@ -46,21 +46,17 @@ CASES = [
 def run_case(godot: str, opts: list[str], expect_exit, text: str) -> tuple[bool, str]:
     p = subprocess.Popen([godot, "--headless", "--path", "godot", "--", *opts], cwd=ROOT, env=ENV,
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    deadline = time.time() + (20 if expect_exit is not None else 7)
-    while p.poll() is None and time.time() < deadline:
-        time.sleep(0.2)
-    running = p.poll() is None
-    if running:
+    try:      # read while waiting: on Windows Godot doesn't exit until its output is read
+        out, _ = p.communicate(timeout=20 if expect_exit is not None else 7)
+        running, code = False, p.returncode
+    except subprocess.TimeoutExpired:
+        running, code = True, None
         p.terminate()
         try:
             out, _ = p.communicate(timeout=10)
         except subprocess.TimeoutExpired:
             p.kill()
             out, _ = p.communicate()
-        code = None
-    else:
-        out, _ = p.communicate()
-        code = p.returncode
     lines = [l for l in out.splitlines() if l.startswith("ballbrawlla:")]
     errors = [l for l in out.splitlines() if "SCRIPT ERROR" in l or "Parse Error" in l]
     detail = f"exit={code if code is not None else 'running'}  {(lines[0] if lines else '')[:110]}"

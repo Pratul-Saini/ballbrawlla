@@ -5,6 +5,7 @@ import socket
 import pytest
 
 from ballbrawlla.launch import (
+    ALL_MODES,
     LEVELS, check_address, check_launch, check_port, inspect_level, list_levels, resolve_level,
 )
 
@@ -92,11 +93,12 @@ def _relay(monkeypatch, value):
         monkeypatch.delenv(invite.RELAY_ENV, raising=False)
 
 
-def test_online_modes_need_a_relay(monkeypatch):
+def test_join_code_checks(monkeypatch):
+    from ballbrawlla.net.invite import address_code
     _relay(monkeypatch, "")
-    assert "No relay server" in check_launch("host_online", LEVELS / "field_01.json", port=49322)
-    assert "No relay server" in check_launch("join_code", code="KQ7-M3X")
+    assert check_launch("join_code", code=address_code("203.0.113.5")) is None     # no relay needed
+    assert "relay server code" in check_launch("join_code", code="KQ7-M3X")
+    assert "8 characters" in check_launch("join_code", code="KQ7")
     _relay(monkeypatch, "relay.example.com")
     assert check_launch("join_code", code="kq7 m3x") is None
-    assert "6 characters" in check_launch("join_code", code="KQ7")
-    assert "football field" in check_launch("host_online", LEVELS / "arena_01.json", port=49322)
+    assert "host_online" not in ALL_MODES

@@ -92,27 +92,24 @@ func test_escape_walks_back_one_screen_then_quits() -> void:
 	check(m.quit, "QUIT quits")
 
 func test_selecting_a_greyed_item_shows_its_reason_and_launches_nothing() -> void:
-	_with_relay(false)
-	var m = _menu()
-	_goto(m, "PLAY")
-	_goto(m, "ONLINE")
-	var online = m.items()
-	check(not online[0].enabled() and "No relay server" in online[0].reason, "host online is greyed without a relay")
-	check(not online[1].enabled(), "join with code is greyed without a relay")
-	m.cursor = 0
+	var m = _join_screen()
+	check(not m.items()[2].enabled(), "CONNECT is greyed with no code")
+	m.cursor = 2
 	m.select()
 	check(m.error != "" and m.result == null, "a reason is shown, nothing starts")
 	m.back()
 	check_eq(m.error, "", "any key dismisses the dialog")
 
-func test_online_screen_lists_invite_and_lan_options_when_a_relay_exists() -> void:
-	_with_relay(true)
+func test_online_screen_is_host_or_join_and_needs_no_relay() -> void:
+	_with_relay(false)
 	var m = _menu()
 	_goto(m, "PLAY")
 	_goto(m, "ONLINE")
-	check_eq(_labels(m), ["HOST ONLINE GAME", "JOIN WITH CODE", "HOST ON THIS NETWORK", "JOIN ON THIS NETWORK"])
-	check(m.items()[1].enabled(), "join with code works when a relay is set")
-	_with_relay(false)
+	check_eq(_labels(m), ["HOST GAME", "JOIN GAME"])
+	check(m.items()[1].enabled(), "joining needs no relay")
+	if m.items()[0].enabled():          # (greyed only if a game on this machine holds the port)
+		_goto(m, "HOST GAME")
+		check(m.screen == "level" and m.mode == "host", "hosting picks a level")
 
 func test_a_broken_level_is_greyed_in_the_picker() -> void:
 	var bad := Launch.LevelInfo.new()
@@ -128,40 +125,17 @@ func test_a_broken_level_is_greyed_in_the_picker() -> void:
 	m.select()
 	check(m.error != "" and m.result == null, "its problem is shown, nothing starts")
 
-# ---- join on this network
+# ---- join a game
 
 func _join_screen():
 	var m = _menu()
 	m.finder_factory = func(): return FakeFinder.new()
 	_goto(m, "PLAY")
 	_goto(m, "ONLINE")
-	_goto(m, "JOIN ON THIS NETWORK")
+	_goto(m, "JOIN GAME")
 	return m
 
-func test_join_needs_an_address_and_connects_with_it() -> void:
-	var m = _join_screen()
-	check_eq(m.items()[0].action, "none", "starts by waiting for games")
-	check(m.editing(), "starts on the address row")
-	check(not m.items()[2].enabled(), "CONNECT needs an address")
-	for ch in "10.0.0.7":
-		m.type_char(ch)
-	check_eq(m.address, "10.0.0.7")
-	check(m.items()[2].enabled(), "CONNECT works once an address is typed")
-	m.backspace()
-	check_eq(m.address, "10.0.0.")
-	m.cursor = 2
-	m.select()
-	check_eq(m.result["mode"], "join")
-	check_eq(m.result["address"], "10.0.0.")
-	check_eq(m.result["code"], "")
-
-func test_address_ignores_characters_an_address_cannot_have() -> void:
-	var m = _join_screen()
-	for ch in "1 2/3?":
-		m.type_char(ch)
-	check_eq(m.address, "123", "spaces, slashes and question marks are dropped")
-
-func test_found_games_appear_above_the_address_row_and_join_on_select() -> void:
+func test_found_games_appear_above_the_code_row_and_join_on_select() -> void:
 	var m = _join_screen()
 	var g := Discovery.FoundGame.new()
 	g.address = "10.0.0.9"
@@ -171,12 +145,29 @@ func test_found_games_appear_above_the_address_row_and_join_on_select() -> void:
 	m.finder.found = [g]
 	m.update()
 	check_eq(m.items()[0].label, "Kris's game", "the game is listed first")
-	check_eq(m.cursor, 1, "the cursor stayed on the address row")
+	check_eq(m.cursor, 1, "the cursor stayed on the code row")
 	check(m.editing(), "still typing")
 	m.cursor = 0
 	m.select()
 	check_eq(m.result["mode"], "join")
 	check_eq(m.result["port"], 50611)
+	check_eq(m.result["address"], "10.0.0.9")
+
+func test_a_typed_code_of_a_game_on_this_network_connects_to_it_directly() -> void:
+	var m = _join_screen()
+	var code := Invite.address_code("203.0.113.5")
+	var g := Discovery.FoundGame.new()
+	g.address = "10.0.0.9"
+	g.port = 50611
+	g.name = "Kris's game"
+	g.codes = [code]
+	m.finder.found = [g]
+	m.update()
+	m.cursor = 1
+	m.paste(code)
+	m.cursor = 2
+	m.select()
+	check_eq(m.result["mode"], "join", "connects to the game it found")
 	check_eq(m.result["address"], "10.0.0.9")
 
 func test_leaving_join_closes_the_listener() -> void:
@@ -193,63 +184,61 @@ func test_join_without_discovery_says_so() -> void:
 		return f
 	_goto(m, "PLAY")
 	_goto(m, "ONLINE")
-	_goto(m, "JOIN ON THIS NETWORK")
-	check("automatically" in m.items()[0].label, "tells the player to type an address")
+	_goto(m, "JOIN GAME")
+	check("Can't look" in m.items()[0].label, "tells the player to type the code")
 
-# ---- join with an invite code
+# ---- typing the invite code
 
-func _code_screen():
-	_with_relay(true)
-	var m = _menu()
-	_goto(m, "PLAY")
-	_goto(m, "ONLINE")
-	_goto(m, "JOIN WITH CODE")
-	return m
-
-func test_code_screen_formats_typed_codes_and_connects() -> void:
-	var m = _code_screen()
-	check(m.editing() and not m.items()[1].enabled(), "an empty code cannot connect")
-	for ch in "kq7-m3x":
+func test_join_screen_formats_typed_codes_and_connects() -> void:
+	var m = _join_screen()
+	check(m.editing() and not m.items()[2].enabled(), "an empty code cannot connect")
+	var code := Invite.address_code("203.0.113.5")
+	for ch in (code.substr(0, 4) + "-" + code.substr(4)).to_lower():
 		m.type_char(ch)
-	check_eq(m.code, "KQ7M3X", "typed code is normalised: upper case, no dash")
-	check_eq(m.items()[0].label, "CODE: KQ7-M3X_", "and shown with the dash")
-	check(m.items()[1].enabled(), "a good code can connect")
-	m.cursor = 1
+	check_eq(m.code, code, "typed code is normalised: upper case, no dash")
+	check_eq(m.items()[1].label, "CODE: %s_" % Invite.format_code(code), "and shown with the dash")
+	check(m.items()[2].enabled(), "a good code can connect")
+	m.cursor = 2
 	m.select()
 	check_eq(m.result["mode"], "join_code")
-	check_eq(m.result["code"], "KQ7M3X")
-	_with_relay(false)
+	check_eq(m.result["code"], code)
 
 func test_a_mistyped_code_is_explained_not_silently_fixed() -> void:
-	var m = _code_screen()
+	var m = _join_screen()
 	for ch in "ABC123":
 		m.type_char(ch)
-	var c = m.items()[1]
+	var c = m.items()[2]
 	check(not c.enabled() and "can't contain 1" in c.reason and "never use" in c.reason, c.reason)
+	m.code = Invite.address_code("203.0.113.5")
+	m.code = m.code.substr(0, 7) + ("A" if m.code[7] != "A" else "B")
+	if Invite.code_address(m.code) == "":
+		check("typo" in m.items()[2].reason, m.items()[2].reason)
+
+func test_a_relay_code_needs_a_relay() -> void:
+	_with_relay(false)
+	var m = _join_screen()
+	m.paste("KQ7-M3X")
+	check("8 characters" in m.items()[2].reason, m.items()[2].reason)
+	_with_relay(true)
+	check(m.items()[2].enabled(), "with a relay it can connect")
 	_with_relay(false)
 
 func test_code_length_is_capped() -> void:
-	var m = _code_screen()
-	for ch in "ABCDEFGHJKMN":
+	var m = _join_screen()
+	for ch in "ABCDEFGHJKMNPQ":
 		m.type_char(ch)
-	check_eq(m.code.length(), Invite.CODE_LEN + 2, "capped just past the code length so the error can say 'too long'")
-	_with_relay(false)
+	check_eq(m.code.length(), Invite.DIRECT_LEN + 2, "capped just past the code length so the error can say 'too long'")
 
 func test_paste_takes_the_code_out_of_a_sentence() -> void:
-	var m = _code_screen()
+	_with_relay(true)
+	var m = _join_screen()
 	m.paste("Code: kq7-m3x")
 	check_eq(m.code, "KQ7M3X")
-	m.paste("join me! BSB-XQX ok?")
-	check_eq(m.code, "BSBXQX", "the code-shaped word is found")
+	m.paste("join me! 2JDH-GC8A ok?")
+	check_eq(m.code, "2JDHGC8A", "the code-shaped word is found")
 	m.paste("")
-	check_eq(m.code, "BSBXQX", "an empty paste changes nothing")
+	check_eq(m.code, "2JDHGC8A", "an empty paste changes nothing")
 	_with_relay(false)
-
-func test_paste_into_the_address_row_replaces_it() -> void:
-	var m = _join_screen()
-	m.type_char("9")
-	m.paste("  10.0.0.5  ")
-	check_eq(m.address, "10.0.0.5")
 
 func test_the_level_picker_opens_on_the_last_level() -> void:
 	var m = _menu()
@@ -304,15 +293,14 @@ func test_the_cursor_follows_the_address_row_as_games_come_and_go() -> void:
 	m.update()
 	check_eq(m.cursor, 0, "a cursor on a game row stays where it is")
 
-func test_found_games_show_their_level_and_address() -> void:
+func test_found_games_show_their_level_and_where_they_are() -> void:
 	var m = _join_screen()
 	m.finder.found = [_game("Kris's game", "Field 05", "10.0.0.9", 50611), _game("Quiet", "", "10.0.0.8", 50555)]
 	m.update()
-	check_eq(m.items()[0].hint, "Field 05 - 10.0.0.9")
-	check_eq(m.items()[1].hint, "10.0.0.8", "no level: just the address")
+	check_eq(m.items()[0].hint, "Field 05 - on your Wi-Fi")
+	check_eq(m.items()[1].hint, "on your Wi-Fi", "no level: just where it is")
 
 func test_paste_prefers_the_last_code_shaped_word() -> void:
-	var m = _code_screen()
-	m.paste("old: KQ7-M3X new: BSB-XQX")
-	check_eq(m.code, "BSBXQX")
-	_with_relay(false)
+	var m = _join_screen()
+	m.paste("old: KQ7-M3X new: 2JDH-GC8A")
+	check_eq(m.code, "2JDHGC8A")

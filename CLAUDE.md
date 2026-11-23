@@ -5,8 +5,8 @@
 ## Run and test (Windows, repo root)
 
 ```
-.venv\Scripts\python -m ballbrawlla [--local | --host [--online] | --join IP | --join-code CODE | --sandbox] [--level field_09]
-.venv\Scripts\python -m ballbrawlla.net.relay_server   # relay for invite codes; players use --relay 127.0.0.1
+.venv\Scripts\python -m ballbrawlla [--local | --host [--no-router] | --join IP | --join-code CODE | --sandbox] [--level field_09]
+.venv\Scripts\python -m ballbrawlla.net.relay_server   # optional standalone relay (players never need it)
 .venv\Scripts\python -m pytest -q              # ~25 s, 386 tests
 .venv\Scripts\python -m pytest -q -m "not slow" # ~9 s, skips 3 vault sweeps
 python tools/gen_levels.py [field_NN ...]       # regenerate levels from code
@@ -26,8 +26,9 @@ python tools/gen_levels.py [field_NN ...]       # regenerate levels from code
   - `last_wall`: one cling per wall until landing.
   - Ledge assist: `will_clear_wall`.
 - `net/`: host/client JSON over TCP. `view.py` builds per-player views with hidden information.
-  - Internet play: `invite.py` (codes, `RelayRoom`, `dial`) + `relay_server.py` (asyncio byte-pipe relay). The game protocol runs through it unchanged.
-  - `DEFAULT_RELAY` stays empty until a relay is deployed; until then use `--relay` or `BALLBRAWLLA_RELAY`.
+  - Host/join is all in the menu (Online -> Host game / Join game) with one invite code. `online.py` (`Reach`: picks the code, says "Same Wi-Fi / Internet: ready / not available because ..."; `connect`: LAN beacon first, then address or relay), `upnp.py` (router port opening, stdlib), `invite.py` (8-char address codes with a check value, 6-char relay codes, `RelayRoom`, `dial`), `relay_server.py` (optional byte-pipe relay). N on the host's waiting screen opens a second game window that joins (testing alone).
+  - `DEFAULT_RELAY` stays empty until a relay is deployed; `--relay` / `BALLBRAWLLA_RELAY` / `relay` in `settings.json` set one. Godot mirrors all of it (`reach.gd`, `invite.gd`, `discovery.gd`); `tools/export_parity.py` records codes and checks for its tests.
+  - Tests get an empty `BALLBRAWLLA_HOME` (autouse fixture in `conftest.py`), so a real `settings.json` can't leak in.
 - `render/`: `match_renderer.py` (views, zoom camera, HUD, F3 toggle), `renderer.py` (sandbox), `field_markers.py`.
 - `input.py` / `gamepad.py` (key layouts, controller slots), `notes.py` (F2 session notes in `logs/sessions/`, git-ignored), `config.py` (`Tuning`: every number).
 
@@ -61,16 +62,13 @@ python tools/gen_levels.py [field_NN ...]       # regenerate levels from code
 
 ## State at end of last session (2026-11-22)
 
-- Merged into `main` on 2026-11-22: PRs #22-#27 (local two-player, one cling per wall, slower carrier, play-call movement, F2 session notes, F3 controls HUD). Issues #20, #15, #7 closed by them.
-- This docs update is PR branch `pr/7-docs` (= `tooly`).
-- #7 note: the issue wanted mid-air confirm to drop the QB to the platform below; built as "confirm only while standing" (user's instruction).
-- Open issues not started:
-  - #8 turnover-on-downs spot rules
-  - #9 anti-grief / forward progress
-  - #10 crowding the QB at the throw
-  - #16 slow/hanging tests
-  - #17 death traps (new level copies with spikes, in a new folder)
-  - #18 longer throws / ball physics
-  - #19 choke points so defenders can catch up
-  - stamina, if wanted (from #15)
-- Unverified by a human: the new levels, local play, controllers (no pad was connected), network play across two machines.
+- `main` has PRs up to #33 (packaging, invite codes/relay, music, the Godot port).
+- Open from `tooly`, as stacked PRs (merge in order):
+  1. `pr/34-35-wall-jump` - one jump per wall, chimneys and the new kick hatch (refs #34, #35; not closed).
+  2. `pr/online-menu` (= `tooly`) - host/join from the menu with one invite code, router port opening, N test window.
+- `godot/project.godot` has an uncommitted rewrite by the Godot 4.7 editor (version bump, `window/stretch/aspect` dropped): left out on purpose.
+- Godot 4.7.2 on this machine: `GODOT=C:/Users/pratu/Downloads/Godot_v4.7.2-stable_win64.exe/Godot_v4.7.2-stable_win64_console.exe bash godot/run_tests.sh 300`.
+- This machine's router didn't answer UPnP, so "Internet: ready" has only been tested against a fake router.
+- Open issues not started: #8 turnover-on-downs spots, #9 anti-grief / forward progress, #10 crowding the QB,
+  #16 slow tests, #17 death traps, #18 longer throws, #19 choke points.
+- Unverified by a human: the redesigned levels, the new wall moves, the online menu across two real networks, the N test window.

@@ -173,8 +173,8 @@ def test_m_key_mutes_but_ctrl_m_does_not():
 def test_menu_does_not_steal_m_while_typing_an_address():
     from ballbrawlla.menu import MenuState
     s = MenuState()
-    for label in ("PLAY", "ONLINE", "JOIN ON THIS NETWORK"):
+    for label in ("PLAY", "ONLINE", "JOIN GAME"):
         s.cursor = [i.label.split(":")[0] for i in s.items()].index(label)
         s.select()
     s.close()
-    assert s.editing                                       # the address box is focused: the loop must skip the M hotkey
+    assert s.editing                                       # the code box is focused: the loop must skip the M hotkey

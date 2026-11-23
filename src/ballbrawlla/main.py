@@ -3,10 +3,9 @@ regardless of frame rate.
 
     ballbrawlla                     open the menu
     ballbrawlla --level field_01    practice: you on offense vs a defender that stands still
-    ballbrawlla --host              host a 2-player LAN match (you are Blue)
-    ballbrawlla --join 192.168.x.y  join a LAN match (you are Red)
-    ballbrawlla --host --online     host an internet match: prints an invite code (needs a relay server)
-    ballbrawlla --join-code KQ7-M3X join an internet match with the host's invite code
+    ballbrawlla --host              host a 2-player match (you are Blue): shows an invite code
+    ballbrawlla --join-code KQ7M-3XPA  join with the host's invite code (you are Red)
+    ballbrawlla --join 192.168.x.y  join the host at this address
     ballbrawlla --local             two players on one screen (Blue: WASD + F/G, Red: arrows + . and /)
     ballbrawlla --sandbox           free play in the small arena (physics tuning, no rules)
     ballbrawlla --sandbox --level field_01   free play on the big match field
@@ -15,6 +14,7 @@ regardless of frame rate.
 import argparse
 import os
 import socket
+import subprocess
 import sys
 from dataclasses import asdict
 from pathlib import Path
@@ -31,7 +31,8 @@ from ballbrawlla.menu import Launch, MenuState, run_menu
 from ballbrawlla.net.client import Client
 from ballbrawlla.net.discovery import Beacon
 from ballbrawlla.net.host import Host
-from ballbrawlla.net.invite import RELAY_ENV, RelayRoom, format_code, relay_address
+from ballbrawlla.net import online
+from ballbrawlla.net.invite import RELAY_ENV, format_code, relay_address
 from ballbrawlla.net.protocol import DEFAULT_PORT, lan_ip
 from ballbrawlla.net.view import make_view
 from ballbrawlla.notes import SessionNotes
@@ -66,20 +67,23 @@ def run(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="ballbrawlla")
     parser.add_argument("--level", type=Path, default=None)
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--host", action="store_true", help="host a local network match")
+    mode.add_argument("--host", action="store_true", help="host a match and get an invite code")
     mode.add_argument("--join", metavar="ADDRESS", help="join a host at this IP address")
-    mode.add_argument("--join-code", metavar="CODE", help="join an internet match with an invite code")
+    mode.add_argument("--join-code", metavar="CODE", help="join a match with the host's invite code")
     mode.add_argument("--sandbox", action="store_true", help="free play, no rules")
     mode.add_argument("--local", action="store_true", help="two players on one screen")
     mode.add_argument("--catch", action="store_true", help="catch practice: football rules, no defender")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
-    parser.add_argument("--online", action="store_true",
-                        help="with --host: also open the game on the relay server and get an invite code")
+    parser.add_argument("--online", action="store_true", help=argparse.SUPPRESS)   # old flag: hosting always is
     parser.add_argument("--relay", metavar="HOST[:PORT]",
-                        help=f"relay server for invite codes (default: ${RELAY_ENV}, else the built-in one)")
+                        help=f"relay server for invite codes (default: ${RELAY_ENV}, else none: address codes)")
+    parser.add_argument("--no-router", action="store_true",
+                        help="with --host: don't ask the router to open the game's port (same network only)")
     args = parser.parse_args(argv)
     if args.online and not args.host:
         parser.error("--online goes with --host (to join, use --join-code CODE)")
+    if args.no_router:
+        os.environ["BALLBRAWLLA_NO_ROUTER"] = "1"
     if args.relay:
         os.environ[RELAY_ENV] = args.relay        # every later relay_address() call sees it, menu included
     if args.join_code:
@@ -91,7 +95,7 @@ def run(argv: list[str] | None = None) -> None:
     elif args.local:
         mode = "local"
     elif args.host:
-        mode = "host_online" if args.online else "host"
+        mode = "host"
     elif args.catch:
         mode = "catch"
     elif args.level is not None:
@@ -156,8 +160,7 @@ def start(choice: Launch) -> None:
     elif choice.mode == "local":
         run_couch(level)
     else:
-        run_match(level, host=choice.mode in ("host", "host_online"), port=choice.port,
-                  defender=choice.mode != "catch", online=choice.mode == "host_online")
+        run_match(level, host=choice.mode == "host", port=choice.port, defender=choice.mode != "catch")
 
 
 def run_launcher() -> None:
@@ -230,49 +233,48 @@ def _copy(text: str) -> bool:
         return False
 
 
-def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT, defender: bool = True,
-              online: bool = False) -> None:
+def open_test_window(port: int) -> subprocess.Popen | None:
+    """Start a second copy of the game on this computer that joins the game hosted here: a way to try
+    hosting and joining without a second terminal or computer. None if it couldn't be started."""
+    cmd = [sys.executable] if is_frozen() else [sys.executable, "-m", "ballbrawlla"]
+    cmd += ["--join", "127.0.0.1", "--port", str(port)]
+    try:
+        return subprocess.Popen(cmd, cwd=os.getcwd())
+    except OSError as e:
+        diag.log.warning("could not open a test window: %s", e)
+        return None
+
+
+def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT, defender: bool = True) -> None:
     """Practice (1 human, optionally with no defender) or the hosting player (who also runs the simulation).
-    `online` also opens the game on the relay server, so a player on another network can join with a code."""
+    A host gets an invite code (net/online.py): it works on this network, and over the internet when a relay
+    is set or the router agrees to open the game's port."""
     session = Session(level, TUNING, humans=2 if host else 1, defender=defender)
 
     server: Host | None = None
     beacon: Beacon | None = None
-    room: RelayRoom | None = None
+    reach: online.Reach | None = None
     address = ""
     if host:
-        if online:
-            relay = relay_address()
-            print(f"Opening an online game on the relay server {relay[0]}:{relay[1]} ...")
-            room = RelayRoom(relay)                     # raises ConnectionError with a readable message
-            print(f"Invite code: {room.display_code} - the other player joins with: "
-                  f"ballbrawlla --join-code {room.display_code}")
-        try:
-            server = Host(
-                welcome={"level": level_to_dict(level), "tuning": asdict(TUNING)},
-                max_players=2,
-                port=port,
-                room=room,
-            )
-        except OSError:
-            if room is not None:
-                room.close()
-            raise
+        server = Host(welcome={"level": level_to_dict(level), "tuning": asdict(TUNING)}, max_players=2, port=port)
         address = f"{lan_ip()}:{server.port}"
         beacon = Beacon(f"{socket.gethostname().split('.')[0]}'s game", level.name, server.port)
-        print(f"Hosting on {address} - the other player joins with: ballbrawlla --join {lan_ip()}")
+        reach = online.Reach(server.port, lan_ip(), relay_address(),
+                             use_router=not os.environ.get("BALLBRAWLLA_NO_ROUTER"))
+        print(f"Hosting on {address}. The invite code appears on the game's screen in a few seconds.")
 
-    screen = _open_window(("ballbrawlla (online host, Blue)" if online else "ballbrawlla (host, Blue)") if host
-                          else "ballbrawlla (practice)")
+    screen = _open_window("ballbrawlla (host, Blue)" if host else "ballbrawlla (practice)")
     renderer = MatchRenderer(screen, level, session.field, TUNING)
     inputs = KeyboardInput()
-    notes = SessionNotes(("host_online" if online else "host") if host else "practice", _level_label(level),
+    notes = SessionNotes("host" if host else "practice", _level_label(level),
                          context=lambda: _match_context(lambda: make_view(session, 0)))
     clock = pygame.time.Clock()
     pause = PauseMenu(pauses=not host)
     dt = TUNING.dt
     accumulator = 0.0
     copied_at = -10.0
+    printed_code = ""
+    test_windows: list[subprocess.Popen] = []
 
     try:
         running = True
@@ -294,10 +296,16 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT, defend
                     running = False
                     _quit_app()
                 elif event.type == pygame.KEYDOWN:
-                    if (room is not None and event.key == pygame.K_c
-                            and event.mod & (pygame.KMOD_CTRL | pygame.KMOD_META)):
-                        if _copy(room.display_code):
+                    code = reach.code if reach is not None else None
+                    if code and event.key == pygame.K_c and event.mod & (pygame.KMOD_CTRL | pygame.KMOD_META):
+                        if _copy(format_code(code)):
                             copied_at = pygame.time.get_ticks() / 1000.0
+                        continue
+                    if (server is not None and event.key == pygame.K_n
+                            and session.phase == "waiting" and not test_windows):
+                        proc = open_test_window(server.port)
+                        if proc is not None:
+                            test_windows.append(proc)
                         continue
                     if event.key == pygame.K_r:
                         session.new_match()
@@ -312,6 +320,14 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT, defend
                     renderer.debug = not renderer.debug
 
             if server:
+                if reach is not None:
+                    if reach.room is not None and server.room is None:
+                        server.room = reach.room
+                    if beacon:
+                        beacon.set_codes(reach.codes)
+                    if reach.code and reach.code != printed_code:
+                        printed_code = reach.code
+                        print(f"Invite code: {format_code(printed_code)} - {reach.internet.text}")
                 if beacon:
                     beacon.tick(open_seat=len(server.clients) < server.max_players - 1)
                 joined, left = server.poll()
@@ -339,16 +355,20 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT, defend
                 for pid in server.clients:
                     server.send_to(pid, make_view(session, pid))
 
-            status = f"hosting on {address}" if server else ""
+            status = ""
             invite = None
-            if room is not None:
-                if room.lost:
-                    status = f"relay connection lost - nobody new can join   |   LAN {address}"
-                else:
-                    copied = pygame.time.get_ticks() / 1000.0 - copied_at < 2.0
-                    status = (f"invite code {room.display_code} ({'copied!' if copied else 'Ctrl+C: copy'})"
-                              f"   |   LAN {address}")
-                    invite = room.display_code
+            if reach is not None:
+                code = reach.code
+                copied = pygame.time.get_ticks() / 1000.0 - copied_at < 2.0
+                shown = format_code(code) if code else "..."
+                status = (f"invite code {shown} ({'copied!' if copied else 'Ctrl+C: copy'})   |   "
+                          f"{reach.internet.label}: {reach.internet.state}   |   {address}")
+                invite = {
+                    "code": format_code(code) if code else None,
+                    "lines": [(ln.label, ln.text, ln.state) for ln in reach.lines()],
+                    "copied": copied,
+                    "test": not test_windows,
+                }
             controls = ("R / Options: restart   F1: debug   F2: notes   F3: hide controls   Esc: menu"
                         + _pad_status(inputs))
             renderer.draw(make_view(session, 0), clock.get_fps(), frame_dt, status, controls, invite=invite)
@@ -359,8 +379,13 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT, defend
         notes.save()
         if beacon:
             beacon.close()
+        if reach is not None:
+            reach.close()
         if server:
             server.close()
+        for proc in test_windows:
+            if proc.poll() is None:
+                proc.terminate()
 
 
 def run_couch(level: Level) -> None:
@@ -445,12 +470,12 @@ def run_couch(level: Level) -> None:
 
 
 def run_client(address: str = "", port: int = DEFAULT_PORT, code: str = "") -> None:
-    """Sends input to the host and draws the view it sends back. With `code`, joins through the relay server."""
+    """Sends input to the host and draws the view it sends back. With `code`, finds the host from its invite
+    code (net/online.py)."""
     if code:
-        relay = relay_address()
-        where = f"invite code {format_code(code)}"
-        print(f"Joining {where} via the relay server {relay[0]}:{relay[1]} ...")
-        client = Client.via_code(relay, code)          # its errors already name the code
+        print(f"Joining with invite code {format_code(code)} ...")
+        client, how = online.connect(code)             # its errors already say what to check
+        where = f"code {format_code(code)}, {how}"
     else:
         where = f"{address}:{port}"
         print(f"Connecting to {where} ...")

@@ -21,8 +21,8 @@ from ballbrawlla.launch import (
     MODE_LABELS, LevelInfo, check_launch, check_level, check_port, list_levels,
 )
 from ballbrawlla.net.discovery import Finder, FoundGame
-from ballbrawlla.net.invite import ALPHABET, CODE_LEN, check_relay, format_code, normalize_code
-from ballbrawlla.net.protocol import DEFAULT_PORT, lan_ip
+from ballbrawlla.net.invite import ALPHABET, CODE_LEN, DIRECT_LEN, format_code, normalize_code
+from ballbrawlla.net.protocol import DEFAULT_PORT
 from ballbrawlla.version import __version__
 
 TITLE = "GRIDIRON SCRAMBLE"
@@ -67,7 +67,7 @@ class MenuState:
     mode: str = ""                    # the mode waiting for a level
     port: int = DEFAULT_PORT
     address: str = ""
-    code: str = ""                    # invite code being typed (bare, without the dash)
+    code: str = ""                    # invite code being typed on the Join screen (bare, without the dash)
     screen: str = "main"
     cursor: int = 0
     error: str | None = None          # message dialog; any key dismisses it
@@ -102,27 +102,20 @@ class MenuState:
             ]
         if self.screen == "online":
             return [
-                Item("HOST ONLINE GAME", "mode:host_online", check_relay() or self._port_reason(),
-                     hint="get an invite code to share"),
-                Item("JOIN WITH CODE", "go:code", check_relay(), hint="type the host's invite code"),
-                Item("HOST ON THIS NETWORK", "mode:host", self._port_reason(), hint=f"you are Blue, port {self.port}"),
-                Item("JOIN ON THIS NETWORK", "go:join", hint="you are Red"),
-            ]
-        if self.screen == "code":
-            return [
-                Item(f"CODE: {format_code(self.code)}_", "edit", hint="Ctrl+V pastes"),
-                Item("CONNECT", "launch:join_code", check_launch("join_code", code=self.code)),
+                Item("HOST GAME", "mode:host", self._port_reason(), hint="you get a code to send your friend"),
+                Item("JOIN GAME", "go:join", hint="type your friend's code"),
             ]
         if self.screen == "join":
             if self.games:
-                found = [Item(g.name, f"found:{n}", hint=" - ".join(x for x in (g.level, g.address) if x)) for n, g in enumerate(self.games)]
+                found = [Item(g.name, f"found:{n}", hint=" - ".join(x for x in (g.level, "on your Wi-Fi") if x))
+                         for n, g in enumerate(self.games)]
             elif self.finder is not None and self.finder.available:
-                found = [Item("Looking for games on your network...", "none", hint="or type an address below")]
+                found = [Item("Looking for games on your Wi-Fi...", "none", hint="or type the code below")]
             else:
-                found = [Item("Can't search this network automatically", "none", hint="type an address below")]
+                found = [Item("Can't look for games on this network", "none", hint="type the code below")]
             return found + [
-                Item(f"ADDRESS: {self.address}_", "edit"),
-                Item("CONNECT", "launch:join", check_launch("join", None, self.port, self.address)),
+                Item(f"CODE: {format_code(self.code)}_", "edit", hint="Ctrl+V pastes"),
+                Item("CONNECT", "launch:join_code", check_launch("join_code", code=self.code)),
             ]
         if self.screen == "level":
             return [Item(i.name, f"pick:{i.key}", self._level_reason(i),
@@ -150,8 +143,7 @@ class MenuState:
     def title(self) -> str:
         if self.screen == "level":
             return f"{MODE_LABELS[self.mode].upper()}: CHOOSE A LEVEL"
-        return {"main": "", "play": "PLAY", "freeplay": "FREE PLAY", "online": "ONLINE", "join": "JOIN ON THIS NETWORK",
-                "code": "JOIN WITH CODE"}[self.screen]
+        return {"main": "", "play": "PLAY", "freeplay": "FREE PLAY", "online": "ONLINE", "join": "JOIN GAME"}[self.screen]
 
     # ---- navigation
     def _go(self, screen: str) -> None:
@@ -161,7 +153,7 @@ class MenuState:
         if screen == "join":
             self.finder = Finder()
             self.games = []
-            self.cursor = 1                  # the address row; games found later appear above it
+            self.cursor = 1                  # the code row; games found later appear above it
         if screen == "level":
             self.cursor = next((n for n, i in enumerate(self.shown_levels()) if i.key == self.level_key), 0)
 
@@ -225,45 +217,36 @@ class MenuState:
             info = next(i for i in self.levels if i.key == arg)
             self.result = Launch(self.mode, info.path, self.port)
         elif kind == "launch":
-            self.result = Launch(arg, None, self.port, self.address.strip(), self.code)
+            code = normalize_code(self.code)
+            lan = next((g for g in self.games if code in g.codes), None)
+            if arg == "join_code" and lan is not None:      # on this network: connect straight to it
+                self.result = Launch("join", None, lan.port, lan.address)
+            else:
+                self.result = Launch(arg, None, self.port, self.address.strip(), code)
 
-    # ---- text entry (join address, invite code)
+    # ---- text entry (the invite code on the Join screen)
     @property
     def editing(self) -> bool:
-        items = self.items() if self.screen in ("join", "code") else []
+        items = self.items() if self.screen == "join" else []
         return bool(items) and not self.error and items[min(self.cursor, len(items) - 1)].action == "edit"
 
     def type_char(self, ch: str) -> None:
-        if not self.editing:
-            return
-        if self.screen == "code":
-            # Keep anything code-like (so a typo is shown and explained) but ignore dashes and spaces.
-            ch = normalize_code(ch)
-            if ch.isalnum() and len(self.code) < CODE_LEN + 2:
-                self.code += ch
-        elif (ch.isdigit() or ch in ".:-" or ch.isalpha()) and len(self.address) < 40:
-            self.address += ch
+        # Keep anything code-like (so a typo is shown and explained) but ignore dashes and spaces.
+        ch = normalize_code(ch)
+        if self.editing and ch.isalnum() and len(self.code) < DIRECT_LEN + 2:
+            self.code += ch
 
     def backspace(self) -> None:
-        if not self.editing:
-            return
-        if self.screen == "code":
+        if self.editing:
             self.code = self.code[:-1]
-        else:
-            self.address = self.address[:-1]
 
     def paste(self, text: str | None) -> None:
-        """Ctrl+V: a pasted code (or address) replaces what was typed. Pasting "Code: kq7-m3x" works too."""
+        """Ctrl+V: a pasted code replaces what was typed. Pasting "Code: kq7m-3xpa" works too."""
         if not self.editing or not text:
             return
-        if self.screen == "code":
-            words = [normalize_code(w) for w in text.replace(":", " ").split()]
-            exact = [w for w in words if len(w) == CODE_LEN and all(c in ALPHABET for c in w)]
-            self.code = (exact[-1] if exact else normalize_code(text))[:CODE_LEN + 2]
-        else:
-            self.address = ""
-            for ch in text.strip():
-                self.type_char(ch)
+        words = [normalize_code(w) for w in text.replace(":", " ").split()]
+        exact = [w for w in words if len(w) in (CODE_LEN, DIRECT_LEN) and all(c in ALPHABET for c in w)]
+        self.code = (exact[-1] if exact else normalize_code(text))[:DIRECT_LEN + 2]
 
 
 # ---------------------------------------------------------------- drawing
@@ -342,15 +325,13 @@ def draw(surface: pygame.Surface, state: MenuState, fonts: dict[str, pygame.font
         text(small, f"controller: {pads}" if pads else "no controller found (keyboard and mouse work)", DIM,
              midbottom=(w // 2, h - 50))
     if state.screen == "online":
-        text(small, f"your address: {lan_ip()}", DIM, midbottom=(w // 2, h - 74))
-        text(small, "First time hosting? If your computer asks, allow incoming connections.", DIM,
-             midbottom=(w // 2, h - 50))
-    if state.screen == "code":
-        text(small, "The host sees the code on their waiting screen (Ctrl+C there copies it).", DIM,
-             midbottom=(w // 2, h - 50))
+        _wrap(surface, small, "One player hosts and gets an invite code; the other picks JOIN GAME and types it. "
+              "Works on the same Wi-Fi and, when the host's router allows it, over the internet. The host's "
+              "screen says which. First time hosting? If your computer asks, allow the game.", DIM,
+              pygame.Rect(w // 2 - 380, h - 160, 760, 100))
     if state.screen == "join":
-        text(small, "Nothing showing up? You and the host must be on the same Wi-Fi, "
-                    "and your firewall must allow this game.", DIM, midbottom=(w // 2, h - 50))
+        text(small, "The code is on the host's screen. Games on your Wi-Fi also show up here by themselves.", DIM,
+             midbottom=(w // 2, h - 50))
     text(small, f"v{__version__}", DIM, bottomright=(w - 14, h - 10))
     text(small, "Up/Down: move   Enter / click / Cross: select   Esc / Circle: back   M: music", DIM, midbottom=(w // 2, h - 20))
 

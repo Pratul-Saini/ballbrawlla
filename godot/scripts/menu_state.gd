@@ -28,7 +28,7 @@ var level_key := DEFAULT_KEY           # last level picked; the picker opens on 
 var mode := ""                         # the mode waiting for a level
 var port: int = Protocol.DEFAULT_PORT
 var address := ""
-var code := ""                         # invite code being typed (bare, without the dash)
+var code := ""                         # invite code being typed on the Join screen (bare, without the dash)
 var screen := "main"
 var cursor := 0
 var error := ""                        # message dialog; any key dismisses it
@@ -61,14 +61,8 @@ func items() -> Array:
 			return [Item.new("EXPLORE", "mode:sandbox", "", "no rules, any level"),
 					Item.new("CATCH PRACTICE", "mode:catch", "", "QB throws, you catch and score, no defender")]
 		"online":
-			var relay := Invite.check_relay()
-			return [Item.new("HOST ONLINE GAME", "mode:host_online", relay if relay != "" else _port_reason(), "get an invite code to share"),
-					Item.new("JOIN WITH CODE", "go:code", relay, "type the host's invite code"),
-					Item.new("HOST ON THIS NETWORK", "mode:host", _port_reason(), "you are Blue, port %d" % port),
-					Item.new("JOIN ON THIS NETWORK", "go:join", "", "you are Red")]
-		"code":
-			return [Item.new("CODE: %s_" % Invite.format_code(code), "edit", "", "Ctrl+V pastes"),
-					Item.new("CONNECT", "launch:join_code", Launch.check_launch("join_code", "", port, "", code))]
+			return [Item.new("HOST GAME", "mode:host", _port_reason(), "you get a code to send your friend"),
+					Item.new("JOIN GAME", "go:join", "", "type your friend's code")]
 		"join":
 			var found: Array = []
 			if not games.is_empty():
@@ -77,15 +71,14 @@ func items() -> Array:
 					var parts: Array = []
 					if g.level != "":
 						parts.append(g.level)
-					if g.address != "":
-						parts.append(g.address)
+					parts.append("on your Wi-Fi")
 					found.append(Item.new(g.name, "found:%d" % n, "", " - ".join(parts)))
 			elif finder != null and finder.available:
-				found.append(Item.new("Looking for games...", "none", "", "or type an address below"))
+				found.append(Item.new("Looking for games on your Wi-Fi...", "none", "", "or type the code below"))
 			else:
-				found.append(Item.new("Can't search automatically", "none", "", "type an address below"))
-			found.append(Item.new("ADDRESS: %s_" % address, "edit"))
-			found.append(Item.new("CONNECT", "launch:join", Launch.check_launch("join", "", port, address)))
+				found.append(Item.new("Can't look for games on this network", "none", "", "type the code below"))
+			found.append(Item.new("CODE: %s_" % Invite.format_code(code), "edit", "", "Ctrl+V pastes"))
+			found.append(Item.new("CONNECT", "launch:join_code", Launch.check_launch("join_code", "", port, "", code)))
 			return found
 		"level":
 			var out: Array = []
@@ -115,8 +108,7 @@ func _port_reason() -> String:
 func title() -> String:
 	if screen == "level":
 		return "%s: CHOOSE A LEVEL" % Launch.MODE_LABELS[mode].to_upper()
-	return {"main": "", "play": "PLAY", "freeplay": "FREE PLAY", "online": "ONLINE", "join": "JOIN ON THIS NETWORK",
-			"code": "JOIN WITH CODE"}[screen]
+	return {"main": "", "play": "PLAY", "freeplay": "FREE PLAY", "online": "ONLINE", "join": "JOIN GAME"}[screen]
 
 # ---- navigation
 
@@ -132,7 +124,7 @@ func go(target: String) -> void:
 	if target == "join":
 		finder = _new_finder()
 		games = []
-		cursor = 1                   # the address row; games found later appear above it
+		cursor = 1                   # the code row; games found later appear above it
 	if target == "level":
 		cursor = 0
 		var shown := shown_levels()
@@ -205,12 +197,20 @@ func select() -> void:
 					path = i.path
 			result = {"mode": mode, "level": path, "port": port, "address": "", "code": ""}
 		"launch":
-			result = {"mode": arg, "level": "", "port": port, "address": address.strip_edges(), "code": code}
+			var c := Invite.normalize_code(code)
+			var lan = null
+			for g in games:
+				if g.codes.has(c):
+					lan = g
+			if arg == "join_code" and lan != null:      # on this network: connect straight to it
+				result = {"mode": "join", "level": "", "port": lan.port, "address": lan.address, "code": ""}
+			else:
+				result = {"mode": arg, "level": "", "port": port, "address": address.strip_edges(), "code": c}
 
-# ---- text entry (join address, invite code)
+# ---- text entry (the invite code on the Join screen)
 
 func editing() -> bool:
-	if not (screen == "join" or screen == "code") or error != "":
+	if screen != "join" or error != "":
 		return false
 	var its := items()
 	return not its.is_empty() and its[mini(cursor, its.size() - 1)].action == "edit"
@@ -218,20 +218,10 @@ func editing() -> bool:
 func type_char(ch: String) -> void:
 	if not editing():
 		return
-	if screen == "code":
-		# Keep anything code-like (so a typo is shown and explained) but ignore dashes and spaces.
-		var c := Invite.normalize_code(ch)
-		if c != "" and _is_alnum(c) and code.length() < Invite.CODE_LEN + 2:
-			code += c
-	elif (ch.is_valid_int() or ".:-".contains(ch) or _is_alpha(ch)) and address.length() < 40:
-		address += ch
-
-func _is_alpha(s: String) -> bool:
-	for ch in s:
-		var u := ch.unicode_at(0)
-		if not ((u >= 65 and u <= 90) or (u >= 97 and u <= 122)):
-			return false
-	return s != ""
+	# Keep anything code-like (so a typo is shown and explained) but ignore dashes and spaces.
+	var c := Invite.normalize_code(ch)
+	if c != "" and _is_alnum(c) and code.length() < Invite.DIRECT_LEN + 2:
+		code += c
 
 func _is_alnum(s: String) -> bool:
 	for ch in s:
@@ -241,30 +231,21 @@ func _is_alnum(s: String) -> bool:
 	return s != ""
 
 func backspace() -> void:
-	if not editing():
-		return
-	if screen == "code":
+	if editing():
 		code = code.substr(0, code.length() - 1)
-	else:
-		address = address.substr(0, address.length() - 1)
 
-## Ctrl+V: a pasted code (or address) replaces what was typed. Pasting "Code: kq7-m3x" works too.
+## Ctrl+V: a pasted code replaces what was typed. Pasting "Code: kq7m-3xpa" works too.
 func paste(text: String) -> void:
 	if not editing() or text == "":
 		return
-	if screen == "code":
-		var exact: Array = []
-		for w in text.replace(":", " ").split(" ", false):
-			var n := Invite.normalize_code(w)
-			if n.length() == Invite.CODE_LEN:
-				var ok := true
-				for ch in n:
-					if Invite.ALPHABET.find(ch) < 0:
-						ok = false
-				if ok:
-					exact.append(n)
-		code = (exact[-1] if not exact.is_empty() else Invite.normalize_code(text)).substr(0, Invite.CODE_LEN + 2)
-	else:
-		address = ""
-		for ch in text.strip_edges():
-			type_char(ch)
+	var exact: Array = []
+	for w in text.replace(":", " ").split(" ", false):
+		var n := Invite.normalize_code(w)
+		if n.length() == Invite.CODE_LEN or n.length() == Invite.DIRECT_LEN:
+			var ok := true
+			for ch in n:
+				if Invite.ALPHABET.find(ch) < 0:
+					ok = false
+			if ok:
+				exact.append(n)
+	code = (exact[-1] if not exact.is_empty() else Invite.normalize_code(text)).substr(0, Invite.DIRECT_LEN + 2)
