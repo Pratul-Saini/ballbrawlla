@@ -47,6 +47,8 @@ const MINIMAP_H := 40.0
 const AIM_RING_RADIUS := 60.0
 const MIN_ZOOM := 0.4                      # local play: how far the shared camera may zoom out
 const FRAME_MARGIN := Vector2(260, 200)    # world px kept around the players when framing them
+const SHOW_ME_BOX := false                 # white box around the player you control (always shown if there is no art)
+const SHOW_TAG_RING := false               # green circle: how close an opponent must get to tag you
 const RUN_BOB := 2.0                       # world px the player bounces while running on the ground
 const RUN_BOB_SPEED := 0.42                # radians per tick
 const RUN_MIN_SPEED := 20.0                # |vx| above this counts as running
@@ -56,6 +58,7 @@ var field
 var t
 var sprites := PlayerSprites.new()
 var _fx_list: Array = []        # double-jump effects: {x, y, age} in world px
+var _walk := {}                  # play call: role -> {x, f}, to face the QB and defender the way they last moved
 var _prev_air := {}              # role -> [state, vy] last frame, to spot the second jump
 var ci: CanvasItem
 var font: Font
@@ -315,6 +318,7 @@ func _draw_figure(x: float, feet_y: float, team: int, label: String, outline_onl
 	var rect := _wrect(x - w / 2.0, feet_y - h, w, h)
 	var color := _team_color(team)
 	var hand := Vector2.INF
+	var top := rect.position.y        # top of what is drawn, so the label clears the taller sprite
 	var spr: Dictionary = {} if outline_only else sprites.get_sprite(team, facing, TEAM_COLORS[team])
 	if outline_only:
 		_rect_outline(rect.grow(-1.0), color, 2.0)
@@ -328,9 +332,10 @@ func _draw_figure(x: float, feet_y: float, team: int, label: String, outline_onl
 		ci.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 		ci.draw_texture_rect_region(spr["tex"], dst, src)
 		hand = dst.position + (spr["hand"] as Vector2) * dst.size
-	if me:
+		top = minf(top, dst.position.y)
+	if me and (SHOW_ME_BOX or hand == Vector2.INF):
 		_rect_outline(rect.grow(2.0), Color.WHITE, 1.0)
-	_text(label, Vector2(rect.get_center().x, rect.position.y - 16.0), color, 14, true)
+	_text(label, Vector2(rect.get_center().x, top - 16.0), color, 14, true)
 	return hand
 
 func _draw_aim(cx: float, cy: float, angle: float, power: float) -> void:
@@ -369,11 +374,13 @@ func _draw_play_call(view: Dictionary) -> void:
 		_draw_band(call["def_range"][0], call["def_range"][1], _team_color(dfn, 30.0 / 255.0))
 	var qb: Array = call["qb"]
 	var placing: bool = call["placing"] and not call["off_locked"]
-	_draw_figure(qb[0], qb[1], off, "QB", false, placing and me_off, call.get("qb_h", -1.0))
+	var qb_f: int = PlayerSprites.track_facing(_walk, "QB", float(qb[0]), Teams.attack_dir(off))
+	_draw_figure(qb[0], qb[1], off, "QB", false, placing and me_off, call.get("qb_h", -1.0), qb_f)
 	if placing:
 		_draw_spot_marker(call["qb_ok"], qb, call.get("qb_h", -1.0))
 	if call.has("def"):
-		_draw_figure(call["def"][0], call["def"][1], dfn, "DEF", call["def_locked"], true, call.get("def_h", -1.0))
+		var def_f: int = PlayerSprites.track_facing(_walk, "DEF", float(call["def"][0]), Teams.attack_dir(dfn))
+		_draw_figure(call["def"][0], call["def"][1], dfn, "DEF", call["def_locked"], true, call.get("def_h", -1.0), def_f)
 		if not call["def_locked"]:
 			_draw_spot_marker(call["def_ok"], call["def"], call.get("def_h", -1.0))
 	if call.has("aim") and not call["placing"]:
@@ -410,6 +417,7 @@ func _spot_double_jumps(view: Dictionary) -> void:
 		_prev_air[a["role"]] = [a["s"], vy]
 
 func _draw_actors(view: Dictionary) -> void:
+	_walk.clear()
 	_spot_double_jumps(view)
 	for e in _fx_list:
 		sprites.draw_fx(ci, _w(e["x"], e["y"]), e["age"], PlayerSprites.FX_SCALE * zoom)
@@ -425,7 +433,7 @@ func _draw_actors(view: Dictionary) -> void:
 		var hand: Vector2 = _draw_figure(feet_x, a["y"] + a["h"], a["team"], a["role"], false, me, -1.0, facing, bob)
 		if hand != Vector2.INF:
 			hands[a["role"]] = hand
-		if me:
+		if me and SHOW_TAG_RING:
 			ci.draw_arc(_w(feet_x, a["y"] + a["h"] / 2.0), maxf(4.0, t.tag_radius * zoom), 0.0, TAU, 40,
 					c8(90, 200, 120), 1.0)
 	if view.has("aim"):

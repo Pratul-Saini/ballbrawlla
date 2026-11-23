@@ -77,6 +77,21 @@ func draw_fx(ci: CanvasItem, at: Vector2, age: float, k: float) -> void:
 	ci.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	ci.draw_texture_rect_region(fx["tex"], dst, Rect2(f * sz, 0.0, sz, sz))
 
+## Which way a player faces when the view doesn't say: toward where he last moved, starting from `start`.
+## `memory` maps a key to {x, f}; call this every frame with the player's current x. A jump of more than `reset_px`
+## in one frame is a respawn, not a step, so it goes back to `start`.
+static func track_facing(memory: Dictionary, key: String, x: float, start: int, reset_px: float = 60.0) -> int:
+	if not memory.has(key) or absf(x - float(memory[key]["x"])) > reset_px:
+		memory[key] = {"x": x, "f": start}
+		return start
+	var m: Dictionary = memory[key]
+	if x > float(m["x"]) + 0.01:
+		m["f"] = 1
+	elif x < float(m["x"]) - 0.01:
+		m["f"] = -1
+	m["x"] = x
+	return int(m["f"])
+
 ## A small football (an ellipse with a lace) centred at `at`; rx is its half-length in the canvas' units.
 static func draw_football(ci: CanvasItem, at: Vector2, rx: float, color: Color) -> void:
 	var ry: float = rx * 0.62
