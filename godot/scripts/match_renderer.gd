@@ -14,7 +14,7 @@ const PlayerSprites = preload("res://scripts/player_sprites.gd")
 static func c8(r: int, g: int, b: int, a: int = 255) -> Color:
 	return Color(r / 255.0, g / 255.0, b / 255.0, a / 255.0)
 
-var BG := c8(24, 26, 32)
+var BG := c8(30, 84, 45)          # grass green; field markings paint mowed stripes over it
 var BOUND := c8(70, 74, 86)
 var PLATFORM := c8(120, 128, 148)
 var THIN_FILL := c8(84, 140, 160)
@@ -27,6 +27,7 @@ var TEXT := c8(220, 220, 220)
 var QB_REGION := c8(255, 220, 90)
 var SPOT_OK := c8(120, 230, 140)
 var SPOT_BAD := c8(240, 90, 90)
+var SAFE_ZONE := c8(250, 205, 90)   # QB's line: the Defender can't cross it until the throw
 var BANNER := c8(255, 240, 180)
 var DIM := c8(150, 155, 170)
 var BUTTON := c8(60, 120, 80)
@@ -35,13 +36,25 @@ var BUTTON_OFF := c8(60, 62, 70)
 var BUTTON_OFF_EDGE := c8(110, 114, 126)
 var HUD_BAND := c8(16, 17, 22, 200)
 var TEAM_COLORS := [c8(80, 170, 255), c8(255, 110, 110)]
-var YARD_LINE := c8(44, 48, 58)
-var MIDFIELD_LINE := c8(70, 76, 92)
-var GOAL_LINE := c8(200, 200, 210)
-var YARD_TICK := c8(56, 60, 72)
-var LABEL := c8(150, 155, 170)
-var FLOOR_PAINT := c8(52, 56, 68)
-const END_ZONE_ALPHA := 28
+# Football field: green turf with mowed stripes, white chalk lines, team-colored end zones.
+var GRASS_DARK := c8(30, 84, 45)
+var GRASS_LIGHT := c8(38, 98, 53)
+var YARD_LINE := c8(236, 240, 236)
+var MIDFIELD_LINE := c8(255, 255, 255)
+var GOAL_LINE := c8(255, 255, 255)
+var YARD_TICK := c8(210, 222, 210)
+var LABEL := c8(236, 240, 236)
+var FLOOR_PAINT := c8(228, 234, 228)
+const END_ZONE_ALPHA := 120
+# Offense's enemy radar and the game clock.
+var RADAR_FAR := c8(236, 206, 92)
+var RADAR_NEAR := c8(242, 72, 72)
+var CLOCK_FACE := c8(18, 20, 26)
+var CLOCK_RIM := c8(214, 220, 230)
+var CLOCK_TICK := c8(96, 102, 118)
+var CLOCK_GOOD := c8(120, 220, 130)
+var CLOCK_WARN := c8(245, 215, 90)
+var CLOCK_LOW := c8(240, 90, 90)
 const THIN_EDGE_HEIGHT := 3.0
 const MINIMAP_H := 40.0
 const AIM_RING_RADIUS := 60.0
@@ -208,7 +221,13 @@ func draw(p_ci: CanvasItem, p_size: Vector2, view: Dictionary, fps: float, dt: f
 		_draw_play_call(view)
 	if view.has("actors"):
 		_draw_actors(view)
+	if view.has("safe_zone_x"):
+		_draw_safe_zone(view["safe_zone_x"], Teams.attack_dir(int(view["offense"])))
+	# Offense has no minimap: a radial indicator shows where the enemy is and how close.
+	if not view.get("local", false) and view.get("side", "") == "offense" and (phase == "pre_throw" or phase == "live"):
+		_draw_enemy_radar(view)
 	_draw_hud(view, fps, status, controls)
+	_draw_clock(view)
 	if not invite.is_empty() and phase == "waiting":
 		_draw_invite(invite)
 
@@ -269,6 +288,16 @@ func _draw_field() -> void:
 	var f = field
 	var floor_sy: float = (f.floor_y() - cam.y) * zoom
 	var ez_w: float = f.end_zone_px * zoom
+	# Mowed turf: alternating light/dark bands every 10 yards, across the whole field and both end zones.
+	var ez_yards := int(round(t.end_zone_yards))
+	var yd := -ez_yards
+	while yd < int(t.field_yards) + ez_yards:
+		var bx0: float = (f.x_at(Teams.LEFT, yd) - cam.x) * zoom
+		var bx1: float = (f.x_at(Teams.LEFT, yd + 10) - cam.x) * zoom
+		if bx1 >= 0.0 and bx0 <= size.x:
+			var band: Color = GRASS_LIGHT if (int(floor(yd / 10.0)) % 2) == 0 else GRASS_DARK
+			ci.draw_rect(Rect2(bx0, 0.0, bx1 - bx0 + 1.0, size.y), band)
+		yd += 10
 	# End zones, tinted in the defending team's colour, with the team name painted on the floor.
 	for team in [Teams.LEFT, Teams.RIGHT]:
 		var x0: float = f.goal_line_x(team) - (f.end_zone_px if team == Teams.LEFT else 0.0)
@@ -387,6 +416,17 @@ func _draw_play_call(view: Dictionary) -> void:
 		_draw_aim(qb[0], qb[1] - call.get("qb_h", h) / 2.0, call["aim"][0], call["aim"][1])
 
 ## Green bar under the player if it's standing somewhere it can lock in; otherwise a red box.
+## The QB's yard line during the play call and pre-throw: a dashed line the Defender can't cross into the
+## offense's half until the ball is thrown.
+func _draw_safe_zone(x: float, offense_dir: int) -> void:
+	var sx: float = _w(x, 0.0).x
+	var y: float = hud_h
+	while y < size.y:
+		ci.draw_line(Vector2(sx, y), Vector2(sx, minf(y + 12.0, size.y)), SAFE_ZONE, 2.0)
+		y += 22.0
+	var label := "<- safe zone until the throw" if offense_dir > 0 else "safe zone until the throw ->"
+	_text(label, Vector2(sx, hud_h + 26.0), SAFE_ZONE, 14, true)
+
 func _draw_spot_marker(ok: bool, feet: Array, p_h: float) -> void:
 	var w: float = t.player_width
 	var h: float = p_h if p_h > 0.0 else t.player_height
@@ -452,7 +492,7 @@ func _draw_held_ball(at: Vector2) -> void:
 
 # ------------------------------------------------------------ HUD
 
-func _draw_minimap(view: Dictionary) -> void:
+func _draw_minimap(view: Dictionary, show_ball: bool = true) -> void:
 	var x0 := 40.0
 	var y0 := 6.0
 	var w := size.x - 80.0
@@ -477,13 +517,76 @@ func _draw_minimap(view: Dictionary) -> void:
 			_dot(x0, y0, sx, sy, call["def"][0], call["def"][1] - 20.0, _team_color(1 - int(view["offense"])), 3.0)
 	for a in view.get("actors", []):
 		_dot(x0, y0, sx, sy, a["x"] + a["w"] / 2.0, a["y"] + a["h"] / 2.0, _team_color(a["team"]), 3.0)
-	if view.has("ball"):
+	if show_ball and view.has("ball"):
 		_dot(x0, y0, sx, sy, view["ball"]["x"], view["ball"]["y"], BALL, 2.0)
 	var ws := world_size()
 	_rect_outline(Rect2(x0 + cam.x * sx, y0 + cam.y * sy, ws.x * sx, ws.y * sy), c8(200, 200, 200), 1.0)
 
 func _dot(x0: float, y0: float, sx: float, sy: float, x: float, y: float, color: Color, rad: float) -> void:
 	ci.draw_circle(Vector2(x0 + x * sx, y0 + y * sy), rad, color)
+
+## Offense's only read on the enemy: a blip around the player you control that points toward the Defender and
+## spirals inward (and reddens) as it closes in.
+func _draw_enemy_radar(view: Dictionary) -> void:
+	var me = null
+	var enemy = null
+	for a in view.get("actors", []):
+		if a["role"] == "DEF":
+			enemy = a
+		elif a["role"] == "WR" and int(a["team"]) == int(view["team"]):
+			me = a
+	if me == null or enemy == null:
+		return
+	var mc := Vector2(me["x"] + me["w"] / 2.0, me["y"] + me["h"] / 2.0)
+	var ec := Vector2(enemy["x"] + enemy["w"] / 2.0, enemy["y"] + enemy["h"] / 2.0)
+	var d := ec - mc
+	var dist := d.length()
+	if dist < 1.0:
+		return
+	var close: float = clampf(1.0 - dist / field.yard_px / 60.0, 0.0, 1.0)
+	var c := _w(mc.x, mc.y)
+	var u := d / dist
+	var radius := 84.0 - 48.0 * close
+	var color := RADAR_FAR.lerp(RADAR_NEAR, close)
+	ci.draw_arc(c, radius, 0.0, TAU, 40, Color(color.r, color.g, color.b, 0.18), 1.0)
+	var mk := c + u * radius
+	var s := 7.0 + 7.0 * close
+	var perp := Vector2(-u.y, u.x)
+	var tri := PackedVector2Array([mk + u * s, mk - u * s * 0.5 + perp * s * 0.7, mk - u * s * 0.5 - perp * s * 0.7])
+	ci.draw_colored_polygon(tri, color)
+	if close > 0.6:
+		ci.draw_line(c, mk, color, 1.0)
+
+## A round game clock, top-center, for whichever countdown is running (play call, throw timer, or a loose-ball count).
+func _draw_clock(view: Dictionary) -> void:
+	if view.get("timer") == null:
+		return
+	var timer: float = view["timer"]
+	var phase: String = view["phase"]
+	var tmax := 0.0
+	if phase == "play_call":
+		tmax = t.play_call_seconds
+	elif phase == "pre_throw":
+		tmax = t.pre_throw_seconds
+	elif phase == "live":
+		tmax = t.loose_ball_seconds
+	else:
+		return
+	var frac: float = clampf(timer / tmax, 0.0, 1.0) if tmax > 0.0 else 0.0
+	var center := Vector2(size.x / 2.0, hud_h + 32.0)
+	var r := 30.0
+	ci.draw_circle(center, r, CLOCK_FACE)
+	ci.draw_arc(center, r, 0.0, TAU, 40, CLOCK_RIM, 2.0)
+	for i in 12:
+		var a := deg_to_rad(i * 30.0)
+		var dv := Vector2(cos(a), sin(a))
+		ci.draw_line(center + dv * (r - 4.0), center + dv * (r - 1.0), CLOCK_TICK, 1.0)
+	var color := CLOCK_GOOD if frac > 0.5 else (CLOCK_WARN if frac > 0.25 else CLOCK_LOW)
+	if frac > 0.0:
+		ci.draw_arc(center, r - 5.0, -PI / 2.0, -PI / 2.0 + frac * TAU, 48, color, 4.0)
+	var secs: int = maxi(0, int(ceil(timer - 1e-6)))
+	var label := ("%d:%02d" % [secs / 60, secs % 60]) if secs >= 60 else str(secs)
+	_text(label, Vector2(center.x, center.y - 16.0), color, 34, true)
 
 func _draw_hud(view: Dictionary, fps: float, status: String, controls: String) -> void:
 	var local: bool = bool(view.get("local", false))
@@ -499,7 +602,12 @@ func _draw_hud(view: Dictionary, fps: float, status: String, controls: String) -
 			hints = [h]
 	hud_h = MINIMAP_H + 34.0 + 20.0 * maxi(1, hints.size())
 	ci.draw_rect(Rect2(0, 0, size.x, hud_h), HUD_BAND)
-	_draw_minimap(view)
+	# Minimap: the defense gets one (but never the ball); the offense gets none
+	# (it reads the enemy off the radial indicator instead). Local play shows all.
+	if local:
+		_draw_minimap(view, true)
+	elif view["side"] == "defense":
+		_draw_minimap(view, false)
 	var score: Array = view["score"]
 	var top := MINIMAP_H + 12.0
 	var line := "Blue %d - %d Red   |   %s down, %s on offense" % [score[0], score[1], _ordinal(view["down"]), Teams.display(off)]

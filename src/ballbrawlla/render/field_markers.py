@@ -16,13 +16,16 @@ from ballbrawlla.rules.field import Field
 from ballbrawlla.rules.teams import Team
 
 TEAM_COLORS = {Team.LEFT: (80, 170, 255), Team.RIGHT: (255, 110, 110)}
-YARD_LINE = (44, 48, 58)
-MIDFIELD_LINE = (70, 76, 92)
-GOAL_LINE = (200, 200, 210)
-YARD_TICK = (56, 60, 72)
-LABEL = (150, 155, 170)
-FLOOR_PAINT = (52, 56, 68)
-END_ZONE_ALPHA = 28
+# Football field: green turf with mowed stripes, white chalk lines, team-colored end zones.
+GRASS_DARK = (30, 84, 45)
+GRASS_LIGHT = (38, 98, 53)
+YARD_LINE = (236, 240, 236)        # white chalk, every 10 yards
+MIDFIELD_LINE = (255, 255, 255)    # the 50
+GOAL_LINE = (255, 255, 255)
+YARD_TICK = (210, 222, 210)        # short 5-yard ticks
+LABEL = (236, 240, 236)
+FLOOR_PAINT = (228, 234, 228)      # yard numbers / end-zone names painted on the turf
+END_ZONE_ALPHA = 120               # team color over the turf in each end zone
 
 
 class FieldMarkers:
@@ -59,6 +62,17 @@ class FieldMarkers:
         cx, cy = camera.x, camera.y
         floor_sy = (f.floor_y - cy) * zoom
         ez_w = f.end_zone_px * zoom
+
+        # Mowed turf: alternating light/dark bands every 10 yards, across the whole
+        # field including both end zones.
+        ez_yards = int(round(t.end_zone_yards))
+        for yards in range(-ez_yards, int(t.field_yards) + ez_yards, 10):
+            x0 = (f.x_at(Team.LEFT, yards) - cx) * zoom
+            x1 = (f.x_at(Team.LEFT, yards + 10) - cx) * zoom
+            if x1 < 0 or x0 > sw:
+                continue
+            band = GRASS_LIGHT if (yards // 10) % 2 == 0 else GRASS_DARK
+            pygame.draw.rect(screen, band, (x0, 0, x1 - x0 + 1, sh))
 
         # End zones
         for team in Team:

@@ -54,11 +54,15 @@ and the follow-up decisions. Code references are in brackets. All numbers are in
   `tests/test_skill_routes.py` sweeps the timing tick by tick on the real maps and checks each element stays possible but demanding, that the beginner version fails (no air jump, single jump, climbing the face), and that no step or perch sits within a single jump of a balcony.
 
   Choose one with `--level field_03` (the host's choice is sent to the joining player).
-- **Field markings** on every field, in matches and in sandbox mode:
-  - end zones tinted in the defending team's color, with the team name painted on the floor
-  - goal lines, the 50, lines every 10 yards and ticks every 5 yards
-  - yard numbers painted above the floor and pinned near the top of the screen
-- **Camera and minimap:** the window (1,280 × 720) follows what you control, and a minimap across the top shows the whole field.
+- **Field markings** on every field, in matches and in sandbox mode: green turf with mowed 10-yard stripes [`render/field_markers.py`]:
+  - end zones tinted in the defending team's color (matching that team's players), with the team name painted on the floor
+  - white chalk lines: goal lines, the 50, lines every 10 yards and ticks every 5 yards
+  - white yard numbers painted above the floor and pinned near the top of the screen
+- **Camera, minimap and radar:** the window (1,280 × 720) follows what you control. What each side sees of the whole field differs [`render/match_renderer.py`]:
+  - **Offense:** no minimap. A small **radial indicator** around the player you control points toward the Defender and spirals inward and reddens as it closes in - the only read on where the enemy is.
+  - **Defense:** a minimap across the top showing the QB, WR and Defender, but **not the ball**.
+  - **Local 2-player:** one shared minimap showing everything.
+- **Game clock:** a round clock, top-center, counts down whichever timer is running (the play call, the throw, or a loose ball), its ring draining from green to red.
 - **Where players can spawn:** a player can only spawn standing on top of a platform where they fit, never floating or on a wall.
 
 ## A Down

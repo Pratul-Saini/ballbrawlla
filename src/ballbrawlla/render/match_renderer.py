@@ -36,6 +36,7 @@ from ballbrawlla.world.level import Level
 QB_REGION = (255, 220, 90)
 SPOT_OK = (120, 230, 140)      # play call: where the player would be placed
 SPOT_BAD = (240, 90, 90)       # play call: not on a platform in the zone
+SAFE_ZONE = (250, 205, 90)     # QB's line: the Defender can't cross it until the throw
 BANNER = (255, 240, 180)
 DIM = (150, 155, 170)
 BUTTON = (60, 120, 80)
@@ -45,6 +46,15 @@ BUTTON_OFF_EDGE = (110, 114, 126)
 MINIMAP_H = 40
 HUD_H = MINIMAP_H + 54  # dark band behind the minimap and the two HUD text lines
 AIM_RING_RADIUS = 60
+
+RADAR_FAR = (236, 206, 92)     # offense's enemy indicator: far away
+RADAR_NEAR = (242, 72, 72)     # right on top of you
+CLOCK_FACE = (18, 20, 26)
+CLOCK_RIM = (214, 220, 230)
+CLOCK_TICK = (96, 102, 118)
+CLOCK_GOOD = (120, 220, 130)
+CLOCK_WARN = (245, 215, 90)
+CLOCK_LOW = (240, 90, 90)
 
 PLAY_CALL = "play_call"
 
@@ -120,6 +130,7 @@ class MatchRenderer:
         self.font = pygame.font.Font(None, 22)
         self.small = pygame.font.Font(None, 18)
         self.big = pygame.font.Font(None, 44)
+        self.clock_font = pygame.font.Font(None, 34)
         self._invite_font: pygame.font.Font | None = None
         self.debug = False
         self.button_rect: pygame.Rect | None = None
@@ -184,7 +195,13 @@ class MatchRenderer:
             self._draw_play_call(view)
         if "actors" in view:
             self._draw_actors(view)
+        if "safe_zone_x" in view:
+            self._draw_safe_zone(view["safe_zone_x"], Team(view["offense"]).attack_dir)
+        # Offense has no minimap: a radial indicator shows where the enemy is and how close.
+        if not view.get("local") and view.get("side") == "offense" and phase in ("pre_throw", "live"):
+            self._draw_enemy_radar(view)
         self._draw_hud(view, fps, status, controls)
+        self._draw_clock(view)
         if invite and phase == "waiting":
             self._draw_invite(invite)
 
@@ -343,6 +360,18 @@ class MatchRenderer:
         if "aim" in call and not call["placing"]:
             self._draw_aim(Vector2(qb[0], qb[1] - (call.get("qb_h") or h) / 2), *call["aim"])
 
+    def _draw_safe_zone(self, x: float, offense_dir: int) -> None:
+        """The QB's yard line during the play call and pre-throw: a dashed line the
+        Defender can't cross into the offense's half until the ball is thrown."""
+        sx, _ = self._w(x, 0)
+        top, bottom = self.hud_h, self.screen.get_height()
+        y = top
+        while y < bottom:
+            pygame.draw.line(self.screen, SAFE_ZONE, (sx, y), (sx, min(y + 12, bottom)), 2)
+            y += 22
+        label = "<- safe zone until the throw" if offense_dir > 0 else "safe zone until the throw ->"
+        self._text(label, (sx, top + 26), SAFE_ZONE, self.small, center=True)
+
     def _draw_spot_marker(self, ok: bool, feet, h: float | None) -> None:
         """Green bar under the player if it's standing somewhere it can lock in;
         otherwise a red box (jumping, clinging, or outside its zone)."""
@@ -375,7 +404,7 @@ class MatchRenderer:
 
     # ------------------------------------------------------------ HUD
 
-    def _draw_minimap(self, view: dict) -> None:
+    def _draw_minimap(self, view: dict, show_ball: bool = True) -> None:
         vw = self.screen.get_width()
         x0, y0, w, h = 40, 6, vw - 80, MINIMAP_H
         sx, sy = w / self.level.width, h / self.level.height
@@ -401,12 +430,79 @@ class MatchRenderer:
                 dot(call["def"][0], call["def"][1] - 20, _team_color(1 - view["offense"]))
         for a in view.get("actors", ()):
             dot(a["x"] + a["w"] / 2, a["y"] + a["h"] / 2, _team_color(a["team"]))
-        if "ball" in view:
+        if show_ball and "ball" in view:
             dot(view["ball"]["x"], view["ball"]["y"], BALL, 2)
         cam = self.camera
         ww, wh = cam.world_size
         pygame.draw.rect(self.screen, (200, 200, 200),
                          (x0 + cam.pos.x * sx, y0 + cam.pos.y * sy, ww * sx, wh * sy), 1)
+
+    def _draw_enemy_radar(self, view: dict) -> None:
+        """Offense's only read on the enemy: a blip around the player you control that
+        points toward the Defender and spirals inward (and reddens) as it closes in."""
+        me = enemy = None
+        for a in view.get("actors", ()):
+            if a["role"] == "DEF":
+                enemy = a
+            elif a["role"] == "WR" and a["team"] == view["team"]:
+                me = a
+        if me is None or enemy is None:
+            return
+        mc = Vector2(me["x"] + me["w"] / 2, me["y"] + me["h"] / 2)
+        ec = Vector2(enemy["x"] + enemy["w"] / 2, enemy["y"] + enemy["h"] / 2)
+        d = ec - mc
+        dist = d.length()
+        if dist < 1:
+            return
+        close = max(0.0, min(1.0, 1 - dist / self.field.yard_px / 60.0))  # 1 within ~0 yd, 0 past 60 yd
+        c = Vector2(self._w(mc.x, mc.y))
+        u = d / dist
+        radius = 84 - 48 * close                 # closer enemy -> blip spirals toward you
+        color = tuple(round(f + (n - f) * close) for f, n in zip(RADAR_FAR, RADAR_NEAR))
+
+        # A faint ring so the blip reads as a radial gauge, kept subtle.
+        side = int(radius * 2 + 10)
+        ring = pygame.Surface((side, side), pygame.SRCALPHA)
+        pygame.draw.circle(ring, (*color, 45), (side / 2, side / 2), radius, 1)
+        self.screen.blit(ring, (c.x - side / 2, c.y - side / 2))
+
+        mk = c + u * radius
+        size = 7 + 7 * close
+        perp = Vector2(-u.y, u.x)
+        tri = [mk + u * size, mk - u * size * 0.5 + perp * size * 0.7, mk - u * size * 0.5 - perp * size * 0.7]
+        pygame.draw.polygon(self.screen, color, tri)
+        if close > 0.6:                          # imminent: a faint line from you to the blip
+            pygame.draw.line(self.screen, (*color, 255), c, mk, 1)
+
+    def _draw_clock(self, view: dict) -> None:
+        """A round game clock, top-center, for whichever countdown is running
+        (play call, throw timer, or a loose-ball count)."""
+        timer = view.get("timer")
+        if timer is None:
+            return
+        phase = view["phase"]
+        tmax = {PLAY_CALL: self.t.play_call_seconds, "pre_throw": self.t.pre_throw_seconds,
+                "live": self.t.loose_ball_seconds}.get(phase)
+        if tmax is None:
+            return
+        frac = max(0.0, min(1.0, timer / tmax)) if tmax else 0.0
+        cx, cy, r = self.screen.get_width() / 2, self.hud_h + 32, 30
+
+        pygame.draw.circle(self.screen, CLOCK_FACE, (cx, cy), r)
+        pygame.draw.circle(self.screen, CLOCK_RIM, (cx, cy), r, 2)
+        for i in range(12):                      # hour ticks
+            a = math.radians(i * 30)
+            dx, dy = math.cos(a), math.sin(a)
+            pygame.draw.line(self.screen, CLOCK_TICK,
+                             (cx + dx * (r - 4), cy + dy * (r - 4)), (cx + dx * (r - 1), cy + dy * (r - 1)), 1)
+        color = CLOCK_GOOD if frac > 0.5 else CLOCK_WARN if frac > 0.25 else CLOCK_LOW
+        if frac > 0:                             # remaining time as a depleting ring
+            rect = pygame.Rect(cx - r + 3, cy - r + 3, 2 * (r - 3), 2 * (r - 3))
+            pygame.draw.arc(self.screen, color, rect, math.pi / 2 - frac * 2 * math.pi, math.pi / 2, 4)
+        secs = max(0, math.ceil(timer - 1e-6))
+        label = f"{secs // 60}:{secs % 60:02d}" if secs >= 60 else str(secs)
+        img = self.clock_font.render(label, True, color)
+        self.screen.blit(img, (cx - img.get_width() / 2, cy - img.get_height() / 2))
 
     def _draw_hud(self, view: dict, fps: float, status: str, controls: str = "") -> None:
         vw, vh = self.screen.get_size()
@@ -422,7 +518,12 @@ class MatchRenderer:
             self._hud_band = pygame.Surface((vw, self.hud_h), pygame.SRCALPHA)
             self._hud_band.fill((16, 17, 22, 200))
         self.screen.blit(self._hud_band, (0, 0))
-        self._draw_minimap(view)
+        # Minimap: the defense gets one (but never the ball); the offense gets none
+        # (it reads the enemy off the radial indicator instead). Local play shows all.
+        if local:
+            self._draw_minimap(view, show_ball=True)
+        elif view["side"] == "defense":
+            self._draw_minimap(view, show_ball=False)
         score = view["score"]
         top = MINIMAP_H + 12
         line = f"Blue {score[0]} - {score[1]} Red   |   {_ordinal(view['down'])} down, {off.display} on offense"

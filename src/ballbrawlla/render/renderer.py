@@ -9,7 +9,7 @@ from ballbrawlla.entities.player import Player
 from ballbrawlla.game import Game
 from ballbrawlla.physics.vec import Vector2
 
-BG = (24, 26, 32)
+BG = (30, 84, 45)          # grass green; field markings paint mowed stripes over it
 BOUND = (70, 74, 86)
 PLATFORM = (120, 128, 148)
 THIN_FILL = (84, 140, 160)
