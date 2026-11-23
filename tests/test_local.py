@@ -118,6 +118,25 @@ def test_local_screen_draws_both_hints_and_the_offense_button():
     r.draw(make_view(s, 0, local=True), 60, 1 / 60)                      # execution, framed
 
 
+def test_volume_meter_draws_and_a_click_or_drag_sets_the_music_level():
+    from ballbrawlla.music import music
+    s = make_session()
+    r = MatchRenderer(pygame.Surface((1280, 720)), s.level, s.field, s.t)
+    r.draw(make_view(s, 0, local=True), 60, 1 / 60)
+    assert r.volume_rect is not None                              # the meter is on the HUD
+    old = music.volume
+    try:
+        rect = r.volume_rect
+        click = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=(rect.x + rect.width // 4, rect.y + 2))
+        assert r.volume_drag(click) is True and music.volume == pytest.approx(0.25, abs=0.02)
+        drag = pygame.event.Event(pygame.MOUSEMOTION, buttons=(1, 0, 0), pos=(rect.x + rect.width - 1, rect.y + 2))
+        assert r.volume_drag(drag) is True and music.volume == pytest.approx(1.0, abs=0.02)
+        off_meter = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=(5, 5))
+        assert r.volume_drag(off_meter) is False                  # a click elsewhere isn't the meter (so it can aim)
+    finally:
+        music.volume = old
+
+
 def test_f3_hides_the_controls_but_keeps_the_game_state():
     s = make_session()
     r = MatchRenderer(pygame.Surface((1280, 720)), s.level, s.field, s.t)

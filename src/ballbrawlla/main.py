@@ -292,6 +292,8 @@ def run_match(level: Level, host: bool = False, port: int = DEFAULT_PORT, defend
                     continue
                 if music.handle_event(event):
                     continue
+                if renderer.volume_drag(event):   # click/drag the HUD volume meter
+                    continue
                 if event.type == pygame.QUIT:
                     running = False
                     _quit_app()
@@ -426,6 +428,8 @@ def run_couch(level: Level) -> None:
                 continue
             if music.handle_event(event):
                 continue
+            if renderer.volume_drag(event):   # click/drag the HUD volume meter
+                continue
             if event.type == pygame.QUIT:
                 running = False
                 _quit_app()
@@ -511,6 +515,8 @@ def run_client(address: str = "", port: int = DEFAULT_PORT, code: str = "") -> N
                 if pause.handle(event, screen.get_size()):
                     continue
                 if music.handle_event(event):
+                    continue
+                if renderer.volume_drag(event):   # click/drag the HUD volume meter
                     continue
                 if event.type == pygame.QUIT:
                     running = False

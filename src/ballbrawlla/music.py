@@ -1,7 +1,8 @@
 """Background music: every audio file in assets/music/ plays in name order, then the list starts over, forever.
 
 No files means no music, and the game says nothing about it. One file loops on its own. The music plays at menu
-volume in the menus and at a lower volume during a game; M mutes it.
+volume in the menus and a little lower during a game; M mutes it, and - / + lower and raise the volume (a master
+level in [0, 1] the HUD meter shows). The context volume is scaled by that master.
 
 Any problem (no audio device, an unreadable file) is logged and the game carries on: a file that won't load is
 skipped, and if none will load the game stays silent. Set BALLBRAWLLA_MUSIC=off to turn music off completely
@@ -19,7 +20,9 @@ from ballbrawlla import diag
 from ballbrawlla.paths import assets_dir
 
 EXTENSIONS = (".mp3", ".ogg", ".wav")
-VOLUME = {"menu": 0.7, "game": 0.25}
+# Per-context base volume, scaled by the user's master level (Music.volume, 0..1).
+VOLUME = {"menu": 0.7, "game": 0.45}
+VOLUME_STEP = 0.1
 
 
 def find_tracks(folder: Path | None = None) -> list[Path]:
@@ -38,6 +41,7 @@ class Music:
         self.playing = False
         self.muted = False
         self.context = "menu"
+        self.volume = 1.0            # master level in [0, 1]; the HUD meter adjusts it
 
     @property
     def enabled(self) -> bool:
@@ -46,6 +50,12 @@ class Music:
     @property
     def current(self) -> Path | None:
         return self.tracks[self.index] if self.playing and self.tracks else None
+
+    def _target_volume(self) -> float:
+        """The volume to hand pygame: the context base scaled by the master level, 0 when muted."""
+        if self.muted:
+            return 0.0
+        return max(0.0, min(1.0, self.volume * VOLUME[self.context]))
 
     def start(self, folder: Path | None = None) -> bool:
         """Begin playing the list. Returns True if music is playing."""
@@ -73,7 +83,7 @@ class Music:
             track = self.tracks[i]
             try:
                 pygame.mixer.music.load(str(track))
-                pygame.mixer.music.set_volume(0.0 if self.muted else VOLUME[self.context])
+                pygame.mixer.music.set_volume(self._target_volume())
                 pygame.mixer.music.play(loops=-1 if n == 1 else 0)    # a single track repeats by itself
             except pygame.error as e:
                 diag.log.warning("music: skipping %s: %s", track.name, e)
@@ -106,17 +116,35 @@ class Music:
         diag.log.info("music: %s", "muted" if self.muted else "unmuted")
         return self.muted
 
+    def set_volume(self, level: float) -> float:
+        """Set the master level (clamped to [0, 1]) and apply it. Returns the new level."""
+        self.volume = max(0.0, min(1.0, level))
+        self._apply_volume()
+        return self.volume
+
+    def change_volume(self, delta: float) -> float:
+        return self.set_volume(self.volume + delta)
+
     def handle_event(self, event: pygame.event.Event) -> bool:
-        """M toggles mute. Returns True if the event was used. Don't call this while text is being typed."""
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_m and not (event.mod & pygame.KMOD_CTRL):
+        """M toggles mute; - / + lower and raise the volume. Returns True if the event was
+        used. Don't call this while text is being typed."""
+        if event.type != pygame.KEYDOWN or (event.mod & pygame.KMOD_CTRL):
+            return False
+        if event.key == pygame.K_m:
             self.toggle_mute()
+            return True
+        if event.key in (pygame.K_MINUS, pygame.K_KP_MINUS):
+            self.change_volume(-VOLUME_STEP)
+            return True
+        if event.key in (pygame.K_EQUALS, pygame.K_PLUS, pygame.K_KP_PLUS):
+            self.change_volume(VOLUME_STEP)
             return True
         return False
 
     def _apply_volume(self) -> None:
         if self.playing:
             try:
-                pygame.mixer.music.set_volume(0.0 if self.muted else VOLUME[self.context])
+                pygame.mixer.music.set_volume(self._target_volume())
             except pygame.error:
                 pass
 

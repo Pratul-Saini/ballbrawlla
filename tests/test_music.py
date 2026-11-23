@@ -162,6 +162,34 @@ def test_volume_follows_context_and_mute_survives_track_changes(silent_audio, pl
     assert not m.playing
 
 
+def test_master_volume_scales_the_context_volume(silent_audio, playlist):
+    m = Music()
+    m.start(playlist)                                            # menu context, master 1.0
+    assert pygame.mixer.music.get_volume() == pytest.approx(VOLUME["menu"], abs=0.02)
+    m.set_context("game")
+    m.set_volume(0.5)
+    assert pygame.mixer.music.get_volume() == pytest.approx(0.5 * VOLUME["game"], abs=0.02)
+    assert m.set_volume(0.0) == 0.0 and pygame.mixer.music.get_volume() == 0
+    assert m.set_volume(2.0) == 1.0                              # clamps to [0, 1]
+    assert pygame.mixer.music.get_volume() == pytest.approx(VOLUME["game"], abs=0.02)
+
+
+def test_minus_and_plus_keys_change_the_volume_and_clamp():
+    m = Music()
+    assert m.volume == 1.0
+    press = lambda key, mod=0: pygame.event.Event(pygame.KEYDOWN, key=key, mod=mod, unicode="")
+    assert m.handle_event(press(pygame.K_MINUS)) is True and m.volume == pytest.approx(0.9)
+    assert m.handle_event(press(pygame.K_EQUALS)) is True and m.volume == pytest.approx(1.0)
+    for _ in range(20):
+        m.handle_event(press(pygame.K_MINUS))
+    assert m.volume == 0.0                                       # clamped at the bottom
+    for _ in range(30):
+        m.handle_event(press(pygame.K_PLUS))
+    assert m.volume == 1.0                                       # clamped at the top
+    m.set_volume(0.5)
+    assert m.handle_event(press(pygame.K_MINUS, pygame.KMOD_CTRL)) is False and m.volume == 0.5
+
+
 def test_m_key_mutes_but_ctrl_m_does_not():
     m = Music()
     press = lambda mod: pygame.event.Event(pygame.KEYDOWN, key=pygame.K_m, mod=mod, unicode="m")

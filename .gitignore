@@ -9,6 +9,8 @@ dist/
 assets/music/*.mp3
 assets/music/*.ogg
 assets/music/*.wav
+# a loose music/ folder at the repo root (drop tracks in assets/music/ instead) stays out of git too
+/music/
 # Godot editor cache (generated)
 godot/.godot/
 settings.json

@@ -14,6 +14,7 @@ import math
 import pygame
 
 from ballbrawlla.config import Tuning
+from ballbrawlla.music import music
 from ballbrawlla.physics.vec import Vector2
 from ballbrawlla.render.renderer import (
     AIM_LINE,
@@ -134,6 +135,7 @@ class MatchRenderer:
         self._invite_font: pygame.font.Font | None = None
         self.debug = False
         self.button_rect: pygame.Rect | None = None
+        self.volume_rect: pygame.Rect | None = None
         self.markers = FieldMarkers(field)
         self._hud_band: pygame.Surface | None = None
         self.hud_h = HUD_H
@@ -145,6 +147,19 @@ class MatchRenderer:
 
     def button_hit(self, pos: tuple[int, int]) -> bool:
         return self.button_rect is not None and self.button_rect.collidepoint(pos)
+
+    def volume_drag(self, event: pygame.event.Event) -> bool:
+        """Click or drag along the HUD volume meter to set the music level. Returns True
+        if the event landed on the meter (the caller then skips its own handling, so a
+        press here never starts an aim)."""
+        if self.volume_rect is None:
+            return False
+        down = event.type == pygame.MOUSEBUTTONDOWN and event.button == 1
+        drag = event.type == pygame.MOUSEMOTION and event.buttons[0]
+        if (down or drag) and self.volume_rect.collidepoint(event.pos):
+            music.set_volume((event.pos[0] - self.volume_rect.x) / self.volume_rect.width)
+            return True
+        return False
 
     # ------------------------------------------------------------ helpers
 
@@ -561,8 +576,29 @@ class MatchRenderer:
             self._text(label, (rect.centerx, rect.y + 12), TEXT if enabled else DIM, center=True)
             self.button_rect = rect
 
+        self._draw_volume_meter()
+
         if self.debug:
             self._draw_debug(view, fps)
+
+    def _draw_volume_meter(self) -> None:
+        """Music-volume meter in the bottom-right of the HUD: a bar showing the master
+        level (0..1). Adjust it with - / + and mute with M (handled by music.handle_event)."""
+        vw, vh = self.screen.get_size()
+        bw, bh = 118, 9
+        bx, by = vw - 40 - bw, vh - 44
+        muted = music.muted
+        if self.show_controls:
+            hint = self.small.render("- / +   M mute", True, DIM)
+            self.screen.blit(hint, (bx + bw - hint.get_width(), by - 18))
+        label = self.small.render("MUTED" if muted else "MUSIC", True, CLOCK_LOW if muted else DIM)
+        self.screen.blit(label, (bx - 8 - label.get_width(), by - 2))
+        pygame.draw.rect(self.screen, (34, 38, 48), (bx, by, bw, bh), border_radius=3)
+        fill = 0.0 if muted else music.volume
+        if fill > 0:
+            pygame.draw.rect(self.screen, (120, 200, 140), (bx, by, max(2, round(bw * fill)), bh), border_radius=3)
+        pygame.draw.rect(self.screen, (90, 96, 110), (bx, by, bw, bh), 1, border_radius=3)
+        self.volume_rect = pygame.Rect(bx, by, bw, bh)
 
     def _button_label(self, view: dict) -> str | None:
         call = view.get("call")
