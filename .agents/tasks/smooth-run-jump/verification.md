@@ -122,3 +122,36 @@ The sandbox has the sim in-process, so it interpolates. `match_renderer.gd` only
 tools/make_run_cycle.sh      # then: Godot --headless --path godot --import   (once, for new PNGs)
 godot/run_tests.sh
 ```
+
+## Integration pass (step `integrate`, iteration 1)
+No `review.json` existed, so this is the first integration pass. Nothing needed fixing. All commands were run from the worktree.
+
+### Commands and results
+```
+tools/make_run_cycle.sh                         # exit 0, all four sets rebuilt; git status afterwards: no tracked file changed (deterministic)
+  [navy|navy_left|red|red_left] layers flatten back to the source: ok
+  failures: palette=0 foot=0 bounds=0 orphans=0 holes=0 black=0 white=0 hand=0  (each set)
+  lowest row per tag, all four sets: idle 85,85; run 85 x8; jump 85,81; apex 79; fall 83,82; land 85,85
+  all checks passed (68 frame checks over 4 sets)
+godot/run_tests.sh                              # "104 passed, 0 failed"; script exit still FAILED (see below)
+git worktree add /tmp/vr/base 3132b39 && godot/run_tests.sh   # base commit: "93 passed, 0 failed", same FAILED line (worktree removed again)
+```
+The `FAILED: the run printed script errors` verdict comes from `ERROR: Condition "!is_open()"` (relay_client.gd, `test_reach`, a relay that cannot be reached) and `ERROR: 5 resources still in use at exit`. Both lines also print on the untouched base commit 3132b39, so they are not caused by this branch. Every test passes (104/0).
+
+### Engine loads the generated sheets (both teams, both facings), ball in hand
+A throwaway probe (not committed, run from `godot/` and deleted) built a `PlayerSprites`, and for team 0/1 x facing right/left x every frame of idle, run, jump, apex, fall, land called `get_frame_at`, drew the frame with the engine's own `art_scale` and `dest_rect`, and drew the football at `spr["hand"]`. `animated=true available=true`. Result: `.agents/tasks/smooth-run-jump/held-ball-all-frames.png` (first 16 of 17 frames per set are visible; 4 rows: navy, navy_left, red, red_left). I looked at the rows at 3x. In every frame of all four sets the ball sits at the near fist, on the side the character faces: right of the torso for the right-facing sets, left for `_left`. The ball follows the hand through the run, jump, apex and fall frames.
+
+Observation, not changed: the ball (radius x 1.5, the old size) is large against the 96 px art and covers most of the "23" while it is carried. The hand position and ball size are unchanged from before this branch (HAND_RIGHT 76.2/39.4, `ball radius * 1.5`), so this is the previous look, not a regression.
+
+### Sandbox, ball held, real physics
+Probe set `held_by` on the ball at start and ran the scripted `--smoke` input: stand, jump, run at 250 px/s (carrying speed), land, run at 320 after the jump, stop. `held-ball-sandbox-run.png` is 10 frames cropped around the ball. Seen: feet on the floor line while running, a different leg pose per frame, the tucked jump pose in the air, the ball stays in the near hand in all 10 frames. State/velocity printed with each frame matched the pose (grounded vx 250 shows run, airborne shows jump/fall frames).
+
+### Match screen with both teams
+`Godot --path godot res://scenes/match.tscn -- --mode=local --autoplay --shot=... --at=2.0` and `--at=4.0`. `.agents/tasks/smooth-run-jump/match-screenshot.png` (at 4.0): blue DEF and red WR/QB drawn from the new sheets through `match_renderer.gd`, red QB holds the ball in the hand, labels clear. No script errors besides the leak notes printed at exit.
+
+### Still not verified
+- Smoothness in motion was judged only from stills. No video, no high-refresh display.
+- Left-facing sets were checked in the all-frames probe only, not in a running match (both actors in the screenshot face right).
+- Land, wall cling, crouch, slide and aiming were not seen in game.
+- The match screen still draws actors at the latest tick position (see "Interpolation limit" above).
+- Thresholds (150 px/s apex band, 0.12 s landing, 0.08 s minimum air time, 0.35..1.6 rate clamp) remain untuned guesses.
