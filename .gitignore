@@ -5,10 +5,20 @@ __pycache__/
 logs/
 build/
 dist/
-# music files are big; the build bundles them from your disk (see docs/packaging.md)
+# music files are big; by default they stay out of git and the build bundles them from your disk
+# (see docs/packaging.md). The Godot port reads the same tracks from its own assets/music (plus the
+# .import files Godot generates).
 assets/music/*.mp3
 assets/music/*.ogg
 assets/music/*.wav
+godot/assets/music/*.mp3
+godot/assets/music/*.ogg
+godot/assets/music/*.wav
+godot/assets/music/*.import
+# ...except the game's committed soundtrack, which ships in the repo so everyone and every build has it:
+!assets/music/Atlanta_prod_ARESonthetrack_KLICKAUD.mp3
+!godot/assets/music/Atlanta_prod_ARESonthetrack_KLICKAUD.mp3
+!godot/assets/music/Atlanta_prod_ARESonthetrack_KLICKAUD.mp3.import
 # a loose music/ folder at the repo root (drop tracks in assets/music/ instead) stays out of git too
 /music/
 # Godot editor cache (generated)

@@ -73,9 +73,13 @@ func test_every_audio_file_is_found_in_name_order_and_the_rest_ignored() -> void
 	var got := Music.find_tracks(d).map(func(p): return p.get_file())
 	check_eq(got, ["10_last.wav", "A_song.ogg", "b_song.mp3"])
 
-func test_the_shipped_folder_has_no_audio_so_the_game_is_silent_by_default() -> void:
+func test_the_shipped_folder_lists_only_audio_not_the_readme() -> void:
+	# The folder ships empty, but a player may drop their own tracks in: whatever is there
+	# must be audio (the README is never mistaken for music), the same as the Python side.
 	var found := Music.find_tracks("res://assets/music")
-	check_eq(found, [], "only a README ships; the README is never mistaken for music")
+	for p in found:
+		check(Music.EXTENSIONS.has(p.get_extension().to_lower()), "only audio is listed, not %s" % p)
+	check(not found.map(func(p): return p.get_file()).has("README.txt"), "the README is never mistaken for music")
 
 func test_off_switch_means_nothing_loads() -> void:
 	OS.set_environment("BALLBRAWLLA_MUSIC", "off")

@@ -8,7 +8,7 @@ extends Node
 ## completely (the tests do). Add this as an autoload, or create one and add_child it.
 
 const EXTENSIONS := ["mp3", "ogg", "wav"]
-const VOLUME := {"menu": 0.7, "game": 0.25}
+const VOLUME := {"menu": 0.7, "game": 0.45}
 
 var tracks: Array = []         # paths
 var index := 0
