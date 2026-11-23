@@ -72,3 +72,12 @@ tests/                 pytest suite
 - No drop-through on thin platforms. Down means crouch or slide.
 - No client-side prediction or interpolation in network play.
 - No sound, art or menus. Everything is drawn with rectangles and circles.
+
+## Looking ahead
+
+These docs describe the game as built. The forward-looking design docs live at the repo root:
+[`../prototype-design.md`](../prototype-design.md) (the original 2-D brief),
+[`../further-gameplay-features.md`](../further-gameplay-features.md) (the football design intent), and
+[`../3d-prototype.md`](../3d-prototype.md) — a design brief for a **3-D version**, written for the agent
+who will build the first prototype (what stays faithful, how each 2-D idea translates, and the scope of
+a vertical slice).
