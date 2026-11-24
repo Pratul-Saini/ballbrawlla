@@ -30,7 +30,7 @@ func _level():
 
 ## A two-human session (Blue offense) on a flat 1024x400 level; with qb_x the down is a fixed-spot down at that x.
 func _session(offense: int = Teams.LEFT, qb_x = null, extra: Dictionary = {}):
-	var r := Session.create(_level(), _tuning(extra), 2, [offense])
+	var r := Session.create(_level(), _tuning(extra), 2, [offense, offense])   # two flips: create() and set_connected() each start a match
 	var s = r["session"]
 	s.set_connected(1, true)
 	if qb_x != null:
