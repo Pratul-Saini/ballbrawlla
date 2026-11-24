@@ -35,6 +35,9 @@ jobs:
           mkdir -p "$dir"
           unzip -q templates.tpz -d templates_tmp
           cp -r templates_tmp/templates/* "$dir/"
+      # godot/.godot/ (the imported textures) is git-ignored, so a fresh checkout has none; the tests load sprites.
+      - name: Import the assets
+        run: godot --headless --path godot --import
       - name: Test
         run: GODOT=/usr/local/bin/godot godot/run_tests.sh 600
       - name: Build the Mac and Windows apps
