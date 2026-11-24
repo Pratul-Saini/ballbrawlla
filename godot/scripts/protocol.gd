@@ -9,7 +9,7 @@ extends RefCounted
 ##   host -> client  {"t":"welcome","id":pid,"level":{...},"tuning":{...}}   {"t":"reject","reason":str}
 ##                   {"t":"snap",...}   this client's view (view.gd)
 
-const PROTOCOL_VERSION := 4
+const PROTOCOL_VERSION := 5
 const DEFAULT_PORT := 50555
 const MAX_OUTBOX := 1 << 20     # drop a peer that stops reading rather than buffer forever
 const MAX_INBOX := 1 << 20

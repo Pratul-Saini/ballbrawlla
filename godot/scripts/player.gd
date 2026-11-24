@@ -179,7 +179,7 @@ func aim_direction() -> Array:
 	return [cos(a), -sin(a)]   # y-down screen coords
 
 func throw() -> void:
-	if held_ball == null:
+	if held_ball == null or not t.throw_enabled:
 		return
 	var d := aim_direction()
 	if absf(d[0]) > 1e-3:

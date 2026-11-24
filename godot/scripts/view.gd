@@ -2,7 +2,9 @@ extends RefCounted
 ## What one human is allowed to see, as a JSON-able Dictionary (src/ballbrawlla/net/view.py).
 ## The host builds a view per human every frame: its own screen draws view 0, and each client is sent only its own
 ## view. Hidden information is left out entirely, so a client can't peek at it: the offense's throw angle and power are
-## never in the defense's view, and the defense's Defender spot (during the play call) is never in the offense's view.
+## never in the defense's view (and absent for everyone when throwing is off), and the defense's Defender spot (during the play call) is never in the offense's view.
+## "throwing" is the tuning switch (false: no aim, the WR runs a route); "los" is the line of scrimmage x while the route
+## window locks both sides, else null.
 ## Local play (both players at one screen) uses local = true, which shows both.
 
 const Teams = preload("res://scripts/teams.gd")
@@ -32,7 +34,7 @@ static func make_view(s, pid: int, local: bool = false) -> Dictionary:
 		"practice": s.practice, "defender": s.defender, "connected": s.connected.duplicate(),
 		"down": d.number, "offense": d.offense, "score": [s.match_.score[Teams.LEFT], s.match_.score[Teams.RIGHT]],
 		"winner": null if s.match_.winner < 0 else s.match_.winner,
-		"message": s.message, "timer": null, "local": local,
+		"message": s.message, "timer": null, "throwing": s.t.throw_enabled, "los": null, "local": local,
 	}
 	if s.phase == Session.PLAY_CALL:
 		var c = s.call
@@ -49,7 +51,7 @@ static func make_view(s, pid: int, local: bool = false) -> Dictionary:
 			"off_locked": c.offense_locked, "def_locked": c.defense_locked,
 			"restarts": c.restarts,
 		}
-		if local or side == "offense":
+		if s.t.throw_enabled and (local or side == "offense"):
 			call["aim"] = [_r(c.aim_angle), _r(c.aim_power)]
 		if local or side == "defense":
 			var df := [c.def_player.center_x(), c.def_player.box().bottom()]
@@ -72,7 +74,8 @@ static func make_view(s, pid: int, local: bool = false) -> Dictionary:
 		}
 		if s.phase == Session.PRE_THROW:
 			v["timer"] = _r(s.timer)
-			if local or side == "offense":   # your own locked-in throw
+			v["los"] = null if s.los_x == null else _r(s.los_x)
+			if s.t.throw_enabled and (local or side == "offense"):   # your own locked-in throw
 				v["aim"] = [_r(s.qb.aim_angle), _r(s.qb.aim_power)]
 		elif s.phase == Session.LIVE and s.loose_timer != null:
 			v["timer"] = _r(s.loose_timer)

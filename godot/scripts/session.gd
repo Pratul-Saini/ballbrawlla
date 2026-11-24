@@ -3,13 +3,18 @@ extends RefCounted
 ##
 ## Phase flow for every down:
 ##
-##     PLAY_CALL --both locked--> PRE_THROW --10 s, QB throws--> LIVE --play ends--> DEAD
-##         ^  |                                                                     |
-##         |  +--15 s timeout: restart same play call                               |
-##         +------------------- next down (or GAME_OVER) <--------------------------+
+##     PLAY_CALL --both locked--> PRE_THROW --timer--> LIVE --play ends--> DEAD
+##         ^  |                                                              |
+##         |  +--15 s timeout: restart same play call                       |
+##         +------------------- next down (or GAME_OVER) <-------------------+
+##
+## PRE_THROW is the route window. With Tuning.throw_enabled false (the default) it lasts route_window_seconds, the WR
+## already carries the ball, and neither the WR nor the Defender may cross the line of scrimmage until the timer ends;
+## then LIVE starts with nothing thrown. With throw_enabled true it lasts pre_throw_seconds, the QB holds the ball and
+## throws at zero.
 ##
 ## Humans: index 0 is Team.LEFT (Blue), index 1 is Team.RIGHT (Red). On offense a human controls the WR (the QB is
-## placed in the play call and throws by itself); on defense they control the Defender. With one human (practice)
+## placed in the play call and, with throwing on, throws by itself); on defense they control the Defender. With one human (practice)
 ## the defense never moves, or with defender = false (catch practice) there is no defender at all, and after a
 ## touchdown the human swaps to the other team and attacks the other end zone.
 
@@ -22,10 +27,11 @@ const Player = preload("res://scripts/player.gd")
 const Ball = preload("res://scripts/ball.gd")
 const Game = preload("res://scripts/game.gd")
 const Intent = preload("res://scripts/intent.gd")
+const Box = preload("res://scripts/box.gd")
 
 const WAITING := "waiting"        # network: not every human has joined yet
 const PLAY_CALL := "play_call"
-const PRE_THROW := "pre_throw"    # free running; QB holds the ball
+const PRE_THROW := "pre_throw"    # the route window: free running behind the line of scrimmage (QB holds the ball if throwing)
 const LIVE := "live"              # ball thrown: in the air, loose, or carried
 const DEAD := "dead"              # play over; showing the result
 const GAME_OVER := "game_over"
@@ -51,6 +57,7 @@ var result = null                 # {"outcome", "spot"} of the last play
 var message := ""
 var timer := 0.0
 var loose_timer = null
+var los_x = null                  # line of scrimmage x while the route window locks both sides, else null
 var phase := WAITING
 
 ## {"session": Session or null, "error": String}. `p_flips` fixes the coin flips (tests); `defender` = false is catch
@@ -102,6 +109,7 @@ func new_match() -> void:
 	message = ""
 	timer = 0.0
 	loose_timer = null
+	los_x = null
 	var all_here := true
 	for c in connected:
 		all_here = all_here and c
@@ -170,9 +178,14 @@ func _start_execution() -> void:
 	var q = _make_actor(c.qb_spot, Teams.ROLE_QB, off, 2)
 	q.aim_angle = c.aim_angle
 	q.aim_power = c.aim_power
-	# WR: next to the QB, toward the defense's end zone.
-	var wr_x: float = c.qb_spot[0] + Teams.attack_dir(off) * (t.player_width + 4.0)
-	var wr_spot = field.spawn_spot(wr_x, c.qb_spot[1], wr_x, wr_x)
+	var throwing: bool = t.throw_enabled
+	var wr_spot
+	if throwing:
+		# WR: next to the QB, toward the defense's end zone.
+		var wr_x: float = c.qb_spot[0] + Teams.attack_dir(off) * (t.player_width + 4.0)
+		wr_spot = field.spawn_spot(wr_x, c.qb_spot[1], wr_x, wr_x)
+	else:
+		wr_spot = _route_wr_spot(c.qb_spot, off)
 	var wr = _make_actor(wr_spot, Teams.ROLE_WR, off, 0)
 	var actors := [wr]
 	if defender:
@@ -181,9 +194,10 @@ func _start_execution() -> void:
 		actors.append(df)
 	var g = Game.new(level, t, actors.size())
 	g.players = actors
-	var b = Ball.new(q.hand_pos(), t)
-	b.held_by = q
-	q.held_ball = b
+	var holder = q if throwing else wr
+	var b = Ball.new(holder.hand_pos(), t)
+	b.held_by = holder
+	holder.held_ball = b
 	g.ball = b
 	g.ball_trail.clear()
 	game = g
@@ -191,7 +205,45 @@ func _start_execution() -> void:
 	qb_spot = c.qb_spot
 	loose_timer = null
 	phase = PRE_THROW
-	timer = t.pre_throw_seconds
+	if throwing:
+		timer = t.pre_throw_seconds
+	else:
+		timer = t.route_window_seconds
+		_lock_line_of_scrimmage(c.qb_spot[0], off, actors)
+
+## No-throw WR spawn: 28 px behind the QB (toward the offense's own end zone), always on its side of the line.
+func _route_wr_spot(p_qb_spot: Array, off: int) -> Array:
+	var wr_x: float = p_qb_spot[0] - Teams.attack_dir(off) * (t.player_width + 4.0)
+	var lo: float
+	var hi: float
+	if Teams.attack_dir(off) > 0:
+		lo = field.inner_left
+		hi = p_qb_spot[0]
+	else:
+		lo = p_qb_spot[0]
+		hi = field.inner_right
+	var spot = field.snap(wr_x, p_qb_spot[1], lo, hi)
+	return spot if spot != null else p_qb_spot
+
+## Wall the WR (and Defender) off from the far side of the line for the route window.
+## Each gets one full-height solid whose face is half a player width past the line, so their centers can reach it but
+## not cross. Edges are whole pixels (plus a hair) so a fractional edge can never leave a 1-ulp overlap, which the Y
+## pass would resolve by teleporting.
+func _lock_line_of_scrimmage(los: float, off: int, actors: Array) -> void:
+	var w: float = t.player_width
+	var big: float = float(level.width)
+	var tall: float = level.height + 2.0 * big
+	var d: int = Teams.attack_dir(off)
+	var ahead = Box.new(ceilf(los + w / 2.0 + 1e-6), -big, big, tall)                 # right of the line
+	var behind = Box.new(floorf(los - w / 2.0 - 1e-6) - big, -big, big, tall)         # left of the line
+	var barriers := {0: ahead if d > 0 else behind}
+	if actors.size() > 1:
+		barriers[1] = behind if d > 0 else ahead
+	for i in barriers:
+		if actors[i].box().overlaps(barriers[i]):
+			return          # illegal spawn (see Field.spawn_spot): run the window without a line
+	game.barriers = barriers
+	los_x = los
 
 func _step_execution(off_i, def_i, dt: float) -> void:
 	var g = game
@@ -201,7 +253,11 @@ func _step_execution(off_i, def_i, dt: float) -> void:
 	if phase == PRE_THROW:
 		timer -= dt
 		if timer <= 0.0:
-			qb.throw()
+			if t.throw_enabled:
+				qb.throw()
+			else:
+				g.barriers.clear()
+				los_x = null
 			phase = LIVE
 		return
 	var ball = g.ball

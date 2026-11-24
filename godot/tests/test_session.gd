@@ -45,6 +45,8 @@ func _check_snapshot(s, w: Dictionary) -> String:
 	var m := _first_diff("session", want, top)
 	if m != "":
 		return m
+	if not _same(w["los"], s.los_x):
+		return "los expected %s, got %s" % [str(w["los"]), str(s.los_x)]
 	if s.team_of_human != w["humans"].map(func(x): return int(x)):
 		return "humans expected %s, got %s" % [str(w["humans"]), str(s.team_of_human)]
 	if w.has("call"):
@@ -138,7 +140,10 @@ func _replay(name: String, tr: Dictionary) -> String:
 	var t = Tuning.new()
 	for k in tr["tuning"]:
 		var cur = t.get(k)
-		t.set(k, int(tr["tuning"][k]) if typeof(cur) == TYPE_INT else float(tr["tuning"][k]))
+		if typeof(cur) == TYPE_BOOL:
+			t.set(k, bool(tr["tuning"][k]))
+		else:
+			t.set(k, int(tr["tuning"][k]) if typeof(cur) == TYPE_INT else float(tr["tuning"][k]))
 	var lv = Level.load_file("res://levels/%s.json" % tr["level"])["level"]
 	var created := Session.create(lv, t, int(tr["humans"]), tr["flips"], bool(tr["defender"]))
 	if created["session"] == null:
