@@ -2,20 +2,26 @@
 
 Phase flow for every down:
 
-    PLAY_CALL --both locked--> PRE_THROW --10 s, QB throws--> LIVE --play ends--> DEAD
-        ^  |                                                                     |
-        |  +--15 s timeout: restart same play call                             |
-        +------------------- next down (or GAME_OVER) <--------------------------+
+    PLAY_CALL --both locked--> PRE_THROW --timer--> LIVE --play ends--> DEAD
+        ^  |                                                              |
+        |  +--15 s timeout: restart same play call                       |
+        +------------------- next down (or GAME_OVER) <-------------------+
+
+PRE_THROW is the route window. With Tuning.throw_enabled False (the default) it lasts
+route_window_seconds, the WR already carries the ball, and neither the WR nor the Defender
+may cross the line of scrimmage until the timer ends; then LIVE starts with nothing thrown.
+With throw_enabled True it lasts pre_throw_seconds, the QB holds the ball and throws at zero.
 
 Humans: index 0 is Team.LEFT (Blue), index 1 is Team.RIGHT (Red). On offense a
-human controls the WR (the QB is placed in the play call and throws by itself);
-on defense they control the Defender. With one human (practice) the defense
+human controls the WR (the QB is placed in the play call and, with throwing on,
+throws by itself); on defense they control the Defender. With one human (practice) the defense
 never moves (or, with defender=False for catch practice, there is no defender), and after
 a touchdown the human swaps to the other team and attacks the other end zone.
 """
 
 from __future__ import annotations
 
+import math
 import random
 from collections.abc import Sequence
 from enum import Enum
@@ -25,6 +31,7 @@ from ballbrawlla.entities.ball import Ball
 from ballbrawlla.entities.player import Player
 from ballbrawlla.game import Game
 from ballbrawlla.input import Intent
+from ballbrawlla.physics.shapes import AABB
 from ballbrawlla.rules.down import Down, Outcome, PlayResult
 from ballbrawlla.rules.field import Field, Spot
 from ballbrawlla.rules.match import Match
@@ -36,7 +43,7 @@ from ballbrawlla.world.level import Level
 class Phase(str, Enum):
     WAITING = "waiting"      # network: not every human has joined yet
     PLAY_CALL = "play_call"
-    PRE_THROW = "pre_throw"  # free running; QB holds the ball
+    PRE_THROW = "pre_throw"  # the route window: free running behind the line of scrimmage (QB holds the ball if throwing)
     LIVE = "live"            # ball thrown: in the air, loose, or carried
     DEAD = "dead"            # play over; showing the result
     GAME_OVER = "game_over"
@@ -86,6 +93,7 @@ class Session:
         self.message = ""
         self.timer = 0.0
         self.loose_timer: float | None = None
+        self.los_x: float | None = None     # line of scrimmage x while the route window locks both sides
         if all(self.connected):
             self._start_play_call()
         else:
@@ -160,9 +168,13 @@ class Session:
         qb = self._make_actor(c.qb_spot, Role.QB, off, pid=2)
         qb.aim_angle, qb.aim_power = c.aim_angle, c.aim_power
 
-        # WR: next to the QB, toward the defense's end zone.
-        wr_x = c.qb_spot.x + off.attack_dir * (self.t.player_width + 4)
-        wr_spot = self.field.spawn_spot(Spot(wr_x, c.qb_spot.y), wr_x, wr_x)
+        throwing = self.t.throw_enabled
+        if throwing:
+            # WR: next to the QB, toward the defense's end zone.
+            wr_x = c.qb_spot.x + off.attack_dir * (self.t.player_width + 4)
+            wr_spot = self.field.spawn_spot(Spot(wr_x, c.qb_spot.y), wr_x, wr_x)
+        else:
+            wr_spot = self._route_wr_spot(c.qb_spot, off)
         wr = self._make_actor(wr_spot, Role.WR, off, pid=0)
         actors = [wr]
         if self.defender:
@@ -172,16 +184,50 @@ class Session:
 
         game = Game(self.level, self.t, num_players=len(actors))
         game.players = actors
-        ball = Ball(qb.hand_pos(), self.t)
-        ball.held_by = qb
-        qb.held_ball = ball
+        holder = qb if throwing else wr
+        ball = Ball(holder.hand_pos(), self.t)
+        ball.held_by = holder
+        holder.held_ball = ball
         game.ball = ball
         game.ball_trail.clear()
 
         self.game, self.qb, self.qb_spot = game, qb, c.qb_spot
         self.loose_timer = None
         self.phase = Phase.PRE_THROW
-        self.timer = self.t.pre_throw_seconds
+        if throwing:
+            self.timer = self.t.pre_throw_seconds
+        else:
+            self.timer = self.t.route_window_seconds
+            self._lock_line_of_scrimmage(c.qb_spot.x, off, actors)
+
+    def _route_wr_spot(self, qb_spot: Spot, off: Team) -> Spot:
+        """No-throw WR spawn: 28 px behind the QB (toward the offense's own end zone), always on its side of the line."""
+        wr_x = qb_spot.x - off.attack_dir * (self.t.player_width + 4)
+        if off.attack_dir > 0:
+            lo, hi = self.field.inner_left, qb_spot.x
+        else:
+            lo, hi = qb_spot.x, self.field.inner_right
+        return self.field.snap(Spot(wr_x, qb_spot.y), lo, hi) or qb_spot
+
+    def _lock_line_of_scrimmage(self, los: float, off: Team, actors: list[Player]) -> None:
+        """Wall the WR (and Defender) off from the far side of the line for the route window.
+
+        Each gets one full-height solid whose face is half a player width past the line, so their
+        centers can reach it but not cross. Edges are whole pixels (plus a hair) so a fractional
+        edge can never leave a 1-ulp overlap, which the Y pass would resolve by teleporting."""
+        w = self.t.player_width
+        big = float(self.level.width)
+        tall = self.level.height + 2 * big
+        d = off.attack_dir
+        ahead = AABB(float(math.ceil(los + w / 2 + 1e-6)), -big, big, tall)        # right of the line
+        behind = AABB(float(math.floor(los - w / 2 - 1e-6)) - big, -big, big, tall)  # left of the line
+        barriers = {0: ahead if d > 0 else behind}
+        if len(actors) > 1:
+            barriers[1] = behind if d > 0 else ahead
+        if any(actors[i].box.overlaps(b) for i, b in barriers.items()):
+            return          # illegal spawn (see Field.spawn_spot): run the window without a line
+        self.game.barriers = barriers
+        self.los_x = los
 
     def _step_execution(self, off_i: Intent, def_i: Intent, dt: float) -> None:
         g = self.game
@@ -192,7 +238,11 @@ class Session:
         if self.phase is Phase.PRE_THROW:
             self.timer -= dt
             if self.timer <= 0:
-                self.qb.throw()
+                if self.t.throw_enabled:
+                    self.qb.throw()
+                else:
+                    g.barriers.clear()
+                    self.los_x = None
                 self.phase = Phase.LIVE
             return
 

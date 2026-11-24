@@ -159,7 +159,7 @@ def test_z_while_sliding_catches():
 
 # Property 2 -- Validates: Requirements 1.5, 1.7
 def test_z_cancels_aim_without_pickup():
-    g, p = _holding_game()
+    g, p = _holding_game(throw_enabled=True)
     run(g, Intent(z_pressed=True))
     assert p.state.name == "aiming"
     run(g, Intent(z_pressed=True))
@@ -190,14 +190,14 @@ def test_z_while_holding_in_wall_cling_files_no_request():
 
 # Property 2 -- Validates: Requirements 1.7, 6.1
 def test_z_while_holding_on_ground_enters_aiming():
-    g, p = _holding_game()
+    g, p = _holding_game(throw_enabled=True)
     run(g, Intent(z_pressed=True))
     assert p.state.name == "aiming" and p.held_ball is g.ball
 
 
 # Property 2 -- Validates: Requirements 1.7, 6.1
 def test_z_while_holding_in_crouch_enters_aiming():
-    g, p = _holding_game()
+    g, p = _holding_game(throw_enabled=True)
     run(g, Intent(vertical=-1), ticks=2)
     assert p.state.name == "crouch"
     run(g, Intent(vertical=-1, z_pressed=True))
@@ -316,7 +316,7 @@ def test_buffer_cleared_after_catch():
 
 # Property 4 -- Validates: Requirements 2.7, 2.8
 def test_buffer_zero_when_entering_aiming_and_while_holding():
-    g, p = _holding_game()
+    g, p = _holding_game(throw_enabled=True)
     p.pickup_buffer = 5
     run(g, Intent(z_pressed=True))
     assert p.state.name == "aiming"
@@ -469,7 +469,7 @@ def test_trail_empty_after_reset_and_reset_player():
 
 # Property 6 -- Validates: Requirements 3.4, 3.11
 def test_trail_after_throw_has_only_post_throw_positions():
-    g, p = _holding_game()
+    g, p = _holding_game(throw_enabled=True)
     run(g, Intent(z_pressed=True))
     assert p.state.name == "aiming"
     assert len(g.ball_trail) == 0
@@ -566,7 +566,7 @@ def test_stale_buffer_and_trail_do_not_steal_after_catch():
 
 # no instant re-grab -- Validates: Requirements 2.7, 2.8, 3.4
 def test_no_instant_regrab_after_throw():
-    g, p = _holding_game()
+    g, p = _holding_game(throw_enabled=True)
     run(g, Intent(z_pressed=True))
     assert p.state.name == "aiming" and p.pickup_buffer == 0
     run(g, Intent(x_pressed=True))
@@ -578,7 +578,7 @@ def test_no_instant_regrab_after_throw():
 
 # no instant re-grab -- Validates: Requirements 2.7, 2.8
 def test_z_while_holding_leaves_no_stale_buffer():
-    g, p = _holding_game()
+    g, p = _holding_game(throw_enabled=True)
     run(g, Intent(z_pressed=True))  # holding: enters Aiming, no buffer
     assert p.pickup_buffer == 0
     run(g, Intent(x_pressed=True))
@@ -589,7 +589,7 @@ def test_z_while_holding_leaves_no_stale_buffer():
 
 # no instant re-grab -- Validates: Requirements 3.4
 def test_new_z_press_catches_freshly_thrown_ball():
-    g, p = _holding_game()
+    g, p = _holding_game(throw_enabled=True)
     run(g, Intent(z_pressed=True))
     run(g, Intent(x_pressed=True))
     assert g.ball.held_by is None

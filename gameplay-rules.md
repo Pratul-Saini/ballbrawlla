@@ -11,8 +11,8 @@ and the follow-up decisions. Code references are in brackets. All numbers are in
 
 | Role | Team | Controlled by | Can |
 |---|---|---|---|
-| **QB** | Offense | Offense human, during the play call only | Throw (automatically). Can't move, be tagged, or have the ball taken. |
-| **WR** | Offense | Offense human, during execution | Run, slide, wall-jump, catch / pick up (Z). After an interception, tag the Defender (Z). Can't throw. |
+| **QB** | Offense | Offense human, during the play call only | Marks the ball spot. Throws (automatically) only when `throw_enabled` is on. Can't move, be tagged, or have the ball taken. |
+| **WR** | Offense | Offense human, during execution | Run, slide, wall-jump. Carries the ball from the snap. With throwing on: catch / pick up (Z), and after an interception tag the Defender (Z). Can't throw. |
 | **Defender** | Defense | Defense human | Run, slide, wall-jump, catch / pick up (Z). Tag the WR when the WR has the ball (Z). Can't throw. |
 
 - Z does whatever applies: it tags if an opponent holding the ball is within `tag_radius` (40px), and otherwise tries to pick up the ball. Tagging a player without the ball does nothing.
@@ -85,14 +85,23 @@ The Defender must spawn **at least 10 yards past the furthest point the QB could
 | | Offense | Defense |
 |---|---|---|
 | **Place** (only when the down lets the offense pick) | Move the QB with the **same movement as in the play**: run, jump, double jump, wall-jump, slide. It **can only be confirmed while standing on a platform** in the yellow zone (not mid-jump, not clinging to a wall); where it stands becomes its spawn (moved slightly inward if it's on a platform's edge). A green bar under it means it can confirm; a red outline means it can't. **Z / "Confirm QB spot"** confirms. | Move the Defender the same way. It **locks in only while standing on a platform** in your zone. **Z / "Lock in Defender"** locks in. |
-| **Aim** | Hold the mouse and point: the direction is the angle (full circle) and the distance is the power, up to 200px for max. Or use left/right for angle and up/down for power. **X / "Lock in throw"** locks in. Clicking the QB (or Z) goes back to moving it. | |
+| **Aim** (only with `throw_enabled` on) | Hold the mouse and point: the direction is the angle (full circle) and the distance is the power, up to 200px for max. Or use left/right for angle and up/down for power. **X / "Lock in throw"** locks in. Clicking the QB (or Z) goes back to moving it. | |
 
-- **Who sees what:** the QB placement is visible to both sides as it moves. The throw angle and power are **hidden from the defense**, and the Defender's spot is **hidden from the offense** until execution. Each player is only ever sent their own view, so the hidden data never reaches the other machine [`net/view.py`].
+- **No throwing (the default, `throw_enabled` False):** there is no aim step. **Z, X or the button confirms the QB spot and locks the offense in.** On a fixed-spot down (2nd-4th, or after an interception) the offense has nothing to decide and starts locked in. Mouse and aim input are ignored.
+- **Who sees what:** the QB placement is visible to both sides as it moves. With throwing on, the throw angle and power are **hidden from the defense**, and the Defender's spot is **hidden from the offense** until execution. Each player is only ever sent their own view, so the hidden data never reaches the other machine [`net/view.py`].
 - **Starting values:** the last values that team used. The very first time, the QB is mid-region, the aim is 45° toward the opponent at middle power, and the Defender is 5 yards past its boundary.
 - **Both locked in:** execution starts immediately.
 - **Timeout:** if 15s pass without both sides locked in, the **play call restarts** for the same down. Positions, aim and any lock already made are kept. A "(play call restarted)" note is shown.
 
 ## Phase 2: Execution [`session.py`]
+
+**No throwing (the default).** `throw_enabled` is False:
+
+1. The QB, WR and Defender spawn. The WR starts **28px behind the QB** (toward its own end zone) and **holds the ball from the first tick**; the QB only marks the spot.
+2. **Route window, `route_window_seconds` (5s).** The **line of scrimmage** is the vertical line through the QB's spot. The WR can't get its center past it toward the defense and the Defender can't get its center past it toward the offense. Each is stopped by a full-height wall, so jumps, double jumps and wall-jump kicks can't carry anyone over; a player can stand on the line (within 1px). The line is drawn in yellow and a large countdown shows the remaining seconds. Nobody can score or tag during the window.
+3. At zero the walls are removed and play is **live**: the WR runs for the defense's end zone while the Defender tries to tag it. Nothing is thrown, so there is no loose ball, dead ball, interception or pick six.
+
+**Throwing on (`throw_enabled` True), the previous rules:**
 
 1. The QB, WR and Defender spawn. The WR starts next to the QB, toward the defense's end zone.
 2. **10 seconds of free running.** The QB holds the ball.
@@ -115,6 +124,8 @@ The Defender must spawn **at least 10 yards past the furthest point the QB could
 | WR tags the Defender after an interception | | Defense becomes the offense: **1st down at the tag spot** |
 | Defender reaches the end zone: **pick six** | Defense +1 | The team that was scored on gets the ball back: 1st down, QB placed |
 
+Without throwing, only the touchdown row and the Defender-tags-the-WR row can happen: dead ball, interception and pick six need a loose ball. There is no time limit once play is live.
+
 - **"Last platform touched":** the last position where the player was standing on a platform. Wall-clinging doesn't count. So a player tagged in mid-air is spotted where they last stood.
 - **Spot inside your own end zone:** a fixed spot there is pushed out to the goal line.
 - **Pause:** each result is shown for 2.5s before the next play call.
@@ -127,10 +138,11 @@ A touchdown is worth 1 point, and the first team to **5** wins. The host presses
 
 | Command | What it is |
 |---|---|
+| `python -m ballbrawlla --catch` | **Catch practice** (no defender; without throwing: route window, then run to score) |
 | `python -m ballbrawlla` | **Practice:** you are always on offense. The Defender is placed automatically and never moves. |
 | `python -m ballbrawlla --host` / `--join <ip>` | A 2-player match over the local network. The match starts when both are connected and restarts if someone leaves. |
 | `python -m ballbrawlla --local` | Two players on one screen: Blue on W A S D + F / G, Red on the arrows + . and /; first controller is Blue's, second Red's. Nothing is hidden, and the camera zooms out to keep both players in view. |
-| `python -m ballbrawlla --sandbox` | The original free-play arena (no rules), for tuning movement. |
+| `python -m ballbrawlla --sandbox` | The original free-play arena (no rules), for tuning movement. Aiming and throwing work only with `throw_enabled` on. |
 
 ## Interpretations and open questions
 
@@ -139,6 +151,8 @@ These are choices made where the spec allowed more than one reading. Each one is
 - **Defender spawn rule:** "20 yard line or further back" is implemented as *10 yards past the QB's furthest possible spot*. That gives the offense's 20-yard line on a placed 1st down, and the same 10-yard gap on later downs.
 - **Play call timeout:** keeps any lock already made, so only the side that hadn't locked in still needs to.
 - **After an interception:** the new offense's 1st down starts at the tag spot instead of letting them place the QB.
+- **No-throw version:** the WR carries the ball from the snap rather than receiving it at zero (the ball would otherwise jump from the QB to a WR who may be far away). The line of scrimmage is the QB's x; "past it" is judged on the player's center, enforced as a collision wall half a player width beyond the line, so a player can end up to 1px past it. A spawn that would start behind its wall (only if the level has no surface on the right side) runs the window with no line. There is no time limit once play is live, so a WR who hides stalls the down.
 - **Balance to playtest:**
+  - Without throwing the WR carries at 78% speed and may be far behind the Defender when the window ends, so the offense may be at a disadvantage.
   - At 320px/s a player runs about 13 yards per second, so the 10-second pre-throw is long enough to cross most of the field on flat ground. The obstacles slow this down, but `pre_throw_seconds`, `run_speed` and `yard_px` may need tuning.
   - The field layout is a first pass for medium difficulty and hasn't been playtested.

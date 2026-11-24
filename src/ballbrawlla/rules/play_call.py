@@ -14,6 +14,10 @@ Offense (keyboard or controller - see gamepad.py for the buttons):
 Defense: move the Defender the same way; it locks in (Z / X / the button) only
   while standing on a platform inside its zone.
 
+With Tuning.throw_enabled False (the default) there is nothing to aim: step 2 does not exist, Z / X / the
+button confirms the QB spot and locks the offense in directly (mouse and aim input are ignored), and a down
+that fixes the QB spot starts with the offense already locked in.
+
 Execution starts as soon as both sides are locked in. If the timer runs out
 first, the play call restarts (same down) with everything kept as it was.
 """
@@ -84,7 +88,7 @@ class PlayCall:
         self.def_player = self._player(self.def_spot, dfn.attack_dir)
         self.def_ok = True
 
-        self.offense_locked = False
+        self.offense_locked = not t.throw_enabled and not down.offense_picks_spawn   # nothing to decide
         self.defense_locked = defense_auto
 
     def _player(self, spot: Spot, facing: int) -> Player:
@@ -150,6 +154,16 @@ class PlayCall:
         if self.offense_locked:
             return
         can_place = self.down.offense_picks_spawn
+
+        if not self.t.throw_enabled:
+            self._move(self.qb_player, i, dt)
+            spot, self.qb_ok = self._standing_spot(self.qb_player, self.qb_lo, self.qb_hi)
+            if self.qb_ok:
+                self.qb_spot = spot
+            if (i.z_pressed or i.x_pressed or i.button_pressed) and self.qb_ok:
+                self.placing = False
+                self.offense_locked = True
+            return
 
         # Mouse: aiming only (and clicking the QB to go back to moving it)
         if i.mouse_pressed and i.mouse is not None:

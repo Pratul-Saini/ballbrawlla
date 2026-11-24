@@ -98,7 +98,7 @@ class MenuState:
         if self.screen == "freeplay":
             return [
                 Item("EXPLORE", "mode:sandbox", hint="no rules, any level"),
-                Item("CATCH PRACTICE", "mode:catch", hint="QB throws, you catch and score, no defender"),
+                Item("CATCH PRACTICE", "mode:catch", hint="run your route, then run to score, no defender"),
             ]
         if self.screen == "online":
             return [

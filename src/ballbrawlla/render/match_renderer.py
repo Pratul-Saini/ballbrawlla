@@ -46,6 +46,7 @@ MINIMAP_H = 40
 HUD_H = MINIMAP_H + 54  # dark band behind the minimap and the two HUD text lines
 AIM_RING_RADIUS = 60
 
+LOS_LINE = (255, 220, 60)       # the line of scrimmage during the route window
 PLAY_CALL = "play_call"
 
 
@@ -120,6 +121,7 @@ class MatchRenderer:
         self.font = pygame.font.Font(None, 22)
         self.small = pygame.font.Font(None, 18)
         self.big = pygame.font.Font(None, 44)
+        self.countdown_font = pygame.font.Font(None, 120)   # the route window's whole-second countdown
         self._invite_font: pygame.font.Font | None = None
         self.debug = False
         self.button_rect: pygame.Rect | None = None
@@ -178,6 +180,7 @@ class MatchRenderer:
         s.fill(BG)
         self._draw_field()
         self._draw_platforms()
+        self._draw_los(view)
 
         phase = view["phase"]
         if phase == PLAY_CALL:
@@ -285,6 +288,14 @@ class MatchRenderer:
                 pygame.draw.rect(self.screen, THIN_EDGE, (rect.x, rect.y, rect.w, min(THIN_EDGE_HEIGHT, rect.h)))
             else:
                 pygame.draw.rect(self.screen, PLATFORM, rect)
+
+    def _draw_los(self, view: dict) -> None:
+        """The line of scrimmage: a wall neither runner may cross until the route window ends."""
+        los = view.get("los")
+        if los is None:
+            return
+        sx = round(self._w(los, 0)[0])
+        pygame.draw.line(self.screen, LOS_LINE, (sx, 0), (sx, self.screen.get_height()), 3)
 
     def _draw_figure(self, x: float, feet_y: float, team: int, label: str, outline_only=False, me=False,
                      h: float | None = None):
@@ -449,6 +460,15 @@ class MatchRenderer:
                 self._text(f"{who} {self.key_names['restart']} for a new match", (vw / 2, vh / 2 - 20), DIM,
                            center=True)
 
+        if view["phase"] == "pre_throw" and not view.get("throwing", True) and view.get("timer") is not None:
+            img = self.countdown_font.render(str(max(1, math.ceil(view["timer"]))), True, LOS_LINE)
+            pill = pygame.Rect(0, 0, img.get_width() + 40, img.get_height() + 4)
+            pill.midtop = (vw // 2, self.hud_h + 8)
+            back = pygame.Surface(pill.size, pygame.SRCALPHA)
+            pygame.draw.rect(back, (16, 17, 22, 200), back.get_rect(), border_radius=10)
+            self.screen.blit(back, pill)
+            self.screen.blit(img, img.get_rect(center=pill.center))
+
         self.button_rect = None
         label = self._button_label(view)
         if label:
@@ -472,7 +492,7 @@ class MatchRenderer:
                 return None
             if call["placing"]:
                 return "Confirm QB spot" if call["qb_ok"] else "Move QB onto a platform"
-            return "Lock in throw"
+            return "Lock in throw" if view.get("throwing", True) else None
         if call["def_locked"]:
             return None
         return "Lock in Defender" if call.get("def_ok", True) else "Move onto a platform"
@@ -495,10 +515,21 @@ class MatchRenderer:
                 return prefix + "Locked in - waiting for the other side"
             if side == "defense":
                 return prefix + f"Run the Defender to a platform in your zone - {grab} / button: lock in"
+            if not view.get("throwing", True):
+                return prefix + f"Run the QB to a platform in the yellow zone - {grab} / {lock} / button: confirm the QB spot"
             if call["placing"]:
                 return prefix + f"Run the QB to a platform in the yellow zone - {grab} / button: confirm - {lock}: lock in"
             back = f" - {grab} / click QB: move it" if call["picks"] else ""
             return prefix + f"Aim (mouse, right stick or keys) - {lock} / button: lock in" + back
+        if phase == "pre_throw" and not view.get("throwing", True):
+            head = f"ROUTE {timer:4.1f}s - "
+            wr = "run your route, you can't cross the line yet"
+            df = "hold the line, you can't cross yet"
+            if not view.get("defender", True):
+                return head + wr
+            if view.get("local"):
+                return head + f"WR: {wr} / DEF: {df}"
+            return head + (wr if side == "offense" else df)
         if phase == "pre_throw":
             if not view.get("defender", True):
                 return f"THROW IN {timer:4.1f}s - get open"
@@ -525,7 +556,7 @@ class MatchRenderer:
             restarted = "  (play call restarted)" if call["restarts"] else ""
             return f"PLAY CALL {timer:4.1f}s   [{locks}]{restarted}"
         if phase == "pre_throw":
-            return f"THROW IN {timer:4.1f}s"
+            return f"THROW IN {timer:4.1f}s" if view.get("throwing", True) else f"ROUTE {timer:4.1f}s"
         if phase == "live":
             holder = view["ball"]["holder"]
             if holder is None:

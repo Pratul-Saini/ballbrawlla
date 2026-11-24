@@ -16,7 +16,7 @@ from ballbrawlla.session import Phase, Session
 from ballbrawlla.world.level import Level, Platform
 
 FLOOR = 400 - 32
-FAST = dict(yard_px=8, pre_throw_seconds=0.05, result_pause_seconds=0.05)
+FAST = dict(yard_px=8, pre_throw_seconds=0.05, result_pause_seconds=0.05, throw_enabled=True)
 
 
 def make_session(humans=2, seed=1, platforms=(), **tuning) -> Session:

@@ -67,8 +67,10 @@ host   -> client {"t": "snap", ...}                             # that client's 
 ## Views and hidden information (`net/view.py`)
 
 `make_view(session, pid, local=False)` builds what one human may see. The host draws view 0 itself and sends each client only its own view, so hidden data never leaves the host:
-- the defense never receives the offense's throw aim;
+- the defense never receives the offense's throw aim (with `throw_enabled` False, the default, nobody gets an `aim` key);
 - the offense never receives the Defender's position during the play call.
+
+Every view carries `throwing` (the tuning switch) and `los`: the line of scrimmage x while the route window locks both sides, else `null`. The window's countdown is the view's `timer` in phase `pre_throw`. `PROTOCOL_VERSION` is 5 (it was 4 before these keys), so old and new builds refuse each other.
 
 `local=True` (one shared screen, `--local`) includes everything. The renderer draws any view the same way.
 

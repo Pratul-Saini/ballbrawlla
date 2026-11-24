@@ -170,7 +170,7 @@ def snapshot(s: Session) -> dict:
     out = {"ph": s.phase.value, "tick": s.tick, "down": [s.down.number, int(s.down.offense)],
            "spawn": ("region" if s.down.offense_picks_spawn else "fixed"),
            "score": [s.match.score[0], s.match.score[1]], "winner": -1 if s.match.winner is None else int(s.match.winner),
-           "humans": [int(t) for t in s.team_of_human], "msg": s.message, "timer": s.timer,
+           "humans": [int(t) for t in s.team_of_human], "msg": s.message, "timer": s.timer, "los": s.los_x,
            "loose": s.loose_timer, "res": None if s.result is None else s.result.outcome.value,
            "conn": [int(c) for c in s.connected]}
     if s.phase is Phase.PLAY_CALL and s.call is not None:
@@ -238,7 +238,11 @@ def run(name: str, level: str, humans: int, seed: int, ticks: int, tuning: dict 
             "outcomes": sorted(outcomes), "phases": sorted(phases)}
 
 
-FAST = {"pre_throw_seconds": 1.2, "play_call_seconds": 5.0, "result_pause_seconds": 0.4, "loose_ball_seconds": 1.2}
+# The default game no longer throws; the legacy scenarios pin throwing on so the throw/catch code stays compared.
+LEGACY = {"throw_enabled": True}
+FAST = {**LEGACY, "pre_throw_seconds": 1.2, "play_call_seconds": 5.0, "result_pause_seconds": 0.4, "loose_ball_seconds": 1.2}
+# No-throw scenarios: default tuning plus a short route window.
+ROUTE = {"route_window_seconds": 1.2, "play_call_seconds": 5.0, "result_pause_seconds": 0.4}
 
 SCENARIOS = [
     # name, level, humans, seed, ticks, tuning, defender, events
@@ -250,7 +254,7 @@ SCENARIOS = [
     ("versus_b", "field_01", 2, 6, 9000, {**FAST}, True, None),
     ("versus_c", "field_09", 2, 7, 9000, {**FAST, "touchdowns_to_win": 2}, True, None),
     ("versus_d", "field_14", 2, 8, 9000, {**FAST, "downs_per_possession": 2}, True, None),
-    ("versus_e", "field_01", 2, 9, 9000, {"play_call_seconds": 3.0, "pre_throw_seconds": 2.0, "result_pause_seconds": 0.4}, True, None),
+    ("versus_e", "field_01", 2, 9, 9000, {**LEGACY, "play_call_seconds": 3.0, "pre_throw_seconds": 2.0, "result_pause_seconds": 0.4}, True, None),
     ("versus_leave_and_rejoin", "field_01", 2, 10, 6000, {**FAST}, True,
      {1500: [("disconnect", 1)], 1800: [("connect", 1)], 3600: [("new_match", 0)]}),
     ("versus_f", "field_02", 2, 11, 9000, {**FAST, "touchdowns_to_win": 2}, True, None),
@@ -264,6 +268,12 @@ SCENARIOS = [
     ("wander_b", "field_05", 2, 22, 3500, {**FAST, "play_call_seconds": 40.0}, True, None),
     ("wander_c", "field_09", 1, 23, 3500, {**FAST, "play_call_seconds": 40.0}, True, None),
     ("wander_d", "field_14", 2, 24, 3500, {**FAST, "play_call_seconds": 40.0}, True, None),
+    # No throwing: play call, route window (line of scrimmage locked), live run to the end zone.
+    ("route_practice_a", "field_01", 1, 41, 7000, {**ROUTE, "touchdowns_to_win": 3}, True, None),
+    ("route_catch_practice", "field_05", 1, 42, 7000, {**ROUTE}, False, None),
+    ("route_versus_a", "field_01", 2, 43, 9000, {**ROUTE, "touchdowns_to_win": 2}, True, None),
+    ("route_versus_b", "field_09", 2, 44, 9000, {**ROUTE, "touchdowns_to_win": 2}, True, None),
+    ("route_versus_c", "field_14", 2, 45, 9000, {**ROUTE, "touchdowns_to_win": 2}, True, None),
 ]
 
 

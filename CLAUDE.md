@@ -19,7 +19,7 @@ python tools/gen_levels.py [field_NN ...]       # regenerate levels from code
 ## Architecture (src/ballbrawlla)
 
 - `game.py` **Game**: physics world (players, ball, pickups). No rules.
-- `session.py` **Session**: a match (phases WAITING / PLAY_CALL / PRE_THROW / LIVE / DEAD / GAME_OVER). It drives `rules/` and a `Game` for the WR and Defender.
+- `session.py` **Session**: a match (phases WAITING / PLAY_CALL / PRE_THROW / LIVE / DEAD / GAME_OVER). It drives `rules/` and a `Game` for the WR and Defender. `PRE_THROW` is the route window: with `throw_enabled` False (the default) the WR already carries the ball and `Game.barriers` wall both players off the line of scrimmage for `route_window_seconds`; with it True it is the old 10 s run before the QB's automatic throw.
 - `rules/`: pure rules: `field.py` (yards, end zones, spawn surfaces), `down.py` (Down, spawn rules, `next_down`), `play_call.py` (QB/DEF players moved with normal movement, lock-in only standing on a platform in zone), `match.py`, `teams.py`.
 - `entities/`: Player (state machine in `player_states.py`) and Ball.
   - Carrier ground speed is scaled by `carry_speed_multiplier`.

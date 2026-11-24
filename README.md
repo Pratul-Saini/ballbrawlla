@@ -1,6 +1,6 @@
 # ballbrawlla
 
-Prototype of a 2D ball-throwing platformer: a 2-player football match played across platforms.
+Prototype of a 2D football platformer: a 2-player match played across platforms. Throwing is switched off for now (`throw_enabled` in `config.py`): after the play call there is a 5 s route window in which the WR carries the ball and neither side may cross the line of scrimmage, then live play.
 
 - [prototype-design.md](prototype-design.md): movement, world and physics requirements
 - [further-gameplay-features.md](further-gameplay-features.md): teams, roles, downs, play call
@@ -51,18 +51,17 @@ time, last save and the score at that moment. Notes are also saved when the game
 python -m ballbrawlla --local                    # any level: --local --level field_09
 ```
 
-Both players share one window and see everything, including the throw aim and the Defender's
+Both players share one window and see everything, including the Defender's
 spawn. The camera zooms out (down to 40%) to keep both players in view, and the ball while it's in the air.
 
 | | Blue | Red |
 |---|---|---|
 | Move / jump / down | W A S D | Arrow keys |
 | Catch, pick up, tag, confirm | F | . (period) |
-| Lock in, throw | G | / (slash) |
+| Lock in (Defender), confirm QB spot (offense) | G | / (slash) |
 | Controller | first one connected | second one connected |
 
-During the play call the **mouse belongs to whichever side is on offense** (aiming the throw and
-the on-screen button). **F5** or a controller's **Options** starts a new match. R is not used here,
+During the play call the **mouse belongs to whichever side is on offense** (the on-screen button; aiming only when throwing is on). **F5** or a controller's **Options** starts a new match. R is not used here,
 because it sits next to Blue's keys. F1 toggles the debug overlay, F3 hides or shows the controls HUD,
 and Esc quits.
 
@@ -89,7 +88,7 @@ How it works, briefly:
 - When a relay server is set (`--relay HOST[:PORT]`, `BALLBRAWLLA_RELAY`, or `DEFAULT_RELAY` in
   `src/ballbrawlla/net/invite.py` once one is deployed), hosts get a 6-character relay code instead, which
   works from any network with no router setup. See [docs/networking.md](docs/networking.md).
-- Each player is sent only what they may see (the defense never receives the throw aim). The joiner plays
+- Each player is sent only what they may see (with throwing on, the defense never receives the throw aim). The joiner plays
   one round trip behind the host; traffic is **not encrypted**.
 
 From a terminal, if you prefer: `python -m ballbrawlla --host` and `python -m ballbrawlla --join-code CODE`
@@ -102,9 +101,8 @@ From a terminal, if you prefer: `python -m ballbrawlla --host` and `python -m ba
 | Input | Offense | Defense |
 |---|---|---|
 | Arrows / stick (normal movement: run, jump, wall-jump, slide) | Move the QB (1st down only); it can only be confirmed standing on a platform in the yellow zone | Move the Defender; it can only lock in standing on a platform in your zone |
-| Z / on-screen button | Confirm the QB spot | Lock in |
-| Hold mouse and point, or ←/→ and ↑/↓ | Aim: direction = angle, distance = power | |
-| X / on-screen button | Lock in the throw | Lock in |
+| Z or X / on-screen button | Confirm the QB spot, which locks the offense in (nothing to decide on downs 2-4) | Lock in |
+| Hold mouse and point, or ←/→ and ↑/↓ | Only with `throw_enabled` on: aim, direction = angle, distance = power | |
 
 **Execution** (you are the WR on offense, the Defender on defense):
 
@@ -116,7 +114,7 @@ From a terminal, if you prefer: `python -m ballbrawlla --host` and `python -m ba
 | Z | Catch / pick up the ball · tag the opponent carrying the ball |
 | R / F1 / F2 / F3 / Esc | New match (practice / host only) · debug overlay · session notes · show / hide the controls HUD · quit |
 
-In `--sandbox` mode the original controls apply: Z with the ball enters aim, X throws.
+After both sides lock in, a **5 s route window** runs: the WR already holds the ball, a yellow line marks the line of scrimmage with a big countdown, and neither the WR nor the Defender can cross the line until the timer ends. In `--sandbox` mode there is no aiming or throwing while `throw_enabled` is off (Z picks up and carries; with it on, Z with the ball enters aim and X throws).
 
 **PS5 controller (DualSense)**: plug in over USB or pair over Bluetooth, before or during play.
 DualShock 4 and Xbox pads work too (same layout). Every controller on a machine drives that
@@ -127,8 +125,8 @@ machine's player, alongside the keyboard and mouse.
 | Left stick / D-pad | Run, crouch/slide (down), move the spawn cursor, aim angle/power while aiming | Arrows |
 | Cross | Jump (hold for full height) | ↑ |
 | Square | Catch / pick up / tag · confirm QB spot · lock in Defender | Z |
-| Circle, R1 or R2 | Lock in the throw / Defender · throw (sandbox) | X |
-| Right stick | Point the aim (play call and sandbox) | Mouse |
+| Circle, R1 or R2 | Lock in the QB spot / Defender (throw in sandbox, throwing on) | X |
+| Right stick | Point the aim (only with throwing on) | Mouse |
 | Options | New match (practice / host) · reset (sandbox) | R |
 | Create or touchpad click | Debug overlay | F1 |
 
@@ -136,7 +134,7 @@ If Steam is running it may take over the controller; close Steam or turn off its
 PlayStation controller support if the pad isn't detected. The status line at the bottom
 shows the controller's name once it's connected.
 
-Catching is forgiving: pressing Z shortly before the ball arrives, or shortly after it passes, still catches it.
+Catching (only a loose ball exists with throwing on) is forgiving: pressing Z shortly before the ball arrives, or shortly after it passes, still catches it.
 
 Wall cling: jump into a wall while holding toward it. With no input you slide slowly down.
 A wall gives you one jump: ↑ hops up it (then you slide down), ↑ + away wall-jumps, or
