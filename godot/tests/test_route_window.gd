@@ -23,14 +23,14 @@ func _tuning(extra: Dictionary = {}):
 		t.set(k, extra[k])
 	return t
 
-func _level():
-	var data := {"name": "flat", "width": 1024, "height": 400, "platforms": [],
+func _level(platforms: Array = []):
+	var data := {"name": "flat", "width": 1024, "height": 400, "platforms": platforms,
 			"player_spawns": [[100, 300]], "ball_spawn": [200, 300]}
 	return Level.parse(data, "flat")["level"]
 
 ## A two-human session (Blue offense) on a flat 1024x400 level; with qb_x the down is a fixed-spot down at that x.
-func _session(offense: int = Teams.LEFT, qb_x = null, extra: Dictionary = {}):
-	var r := Session.create(_level(), _tuning(extra), 2, [offense, offense])   # two flips: create() and set_connected() each start a match
+func _session(offense: int = Teams.LEFT, qb_x = null, extra: Dictionary = {}, platforms: Array = []):
+	var r := Session.create(_level(platforms), _tuning(extra), 2, [offense, offense])   # two flips: create() and set_connected() each start a match
 	var s = r["session"]
 	s.set_connected(1, true)
 	if qb_x != null:
@@ -129,6 +129,36 @@ func test_los_holds_under_push_for_both_teams() -> void:
 					check(absf(s.game.players[0].center_x() - qb_x) < 2.0, tag + " WR pressed against the line")
 					check(absf(s.game.players[1].center_x() - qb_x) < 2.0, tag + " Defender pressed against the line")
 
+## A level solid resolved before the barrier in the same step used to zero the X velocity, so the barrier was
+## skipped and the Y pass teleported the player on top of it, past the line (tests/test_route_window.py).
+func test_los_holds_when_a_level_wall_is_just_beyond_the_barrier_edge() -> void:
+	var w: float = Tuning.new().player_width
+	for who in ["wr", "df"]:
+		for offense in [Teams.LEFT, Teams.RIGHT]:
+			for gap in [1.0, 1.5, 2.5]:
+				for qb_x in [400.0, 400.37, 400.8]:
+					var d: int = Teams.attack_dir(offense)
+					var far_edge: float = ceil(qb_x + w / 2.0 + 1e-6) if d > 0 else floor(qb_x - w / 2.0 - 1e-6)
+					var near_edge: float = floor(qb_x - w / 2.0 - 1e-6) if d > 0 else ceil(qb_x + w / 2.0 + 1e-6)
+					var wall_x: float
+					if who == "wr":
+						wall_x = far_edge + gap if d > 0 else far_edge - gap - 20.0
+					else:
+						wall_x = near_edge - gap - 20.0 if d > 0 else near_edge + gap
+					var tag := "%s %s gap %s qb_x %s" % [who, Teams.display(offense), str(gap), str(qb_x)]
+					var s = _session(offense, qb_x, {}, [{"x": wall_x, "y": 100.0, "w": 20.0, "h": FLOOR_Y - 100.0}])
+					_step(s, null, _z())
+					_step(s, _x())
+					check_eq(s.phase, Session.PRE_THROW, tag + " phase")
+					check_eq(s.los_x, qb_x, tag + " los_x")
+					for tick in _ticks() - 2:
+						_step(s, _move(d), _move(-d))
+						var m := _los_ok(s, d, qb_x)
+						if m != "":
+							failures.append("%s tick %d: %s" % [tag, tick, m])
+							break
+					var p = s.game.players[0] if who == "wr" else s.game.players[1]
+					check(absf(p.center_x() - qb_x) < 2.0 + w, tag + " pressed against its barrier")
 func test_line_lifts_at_expiry_and_both_can_cross() -> void:
 	for offense in [Teams.LEFT, Teams.RIGHT]:
 		var s = _session(offense, 512.5)

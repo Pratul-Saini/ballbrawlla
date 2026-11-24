@@ -62,12 +62,13 @@ def move_aabb(
 def _move_aabb_step(
     box: AABB, vel: Vector2, dt: float, solids: list[AABB], thin: list[AABB] = ()
 ) -> AABB:
-    box = box.shifted(vel.x * dt, 0)
+    vx = vel.x  # the push-out direction must survive the first solid zeroing vel.x
+    box = box.shifted(vx * dt, 0)
     for s in solids:
         if box.overlaps(s):
-            if vel.x > 0:
+            if vx > 0:
                 box.x = s.left - box.w
-            elif vel.x < 0:
+            elif vx < 0:
                 box.x = s.right
             vel.x = 0
 

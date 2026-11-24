@@ -1,5 +1,6 @@
 """The no-throw version: a route window after the play call in which the WR carries the ball and
 neither side may cross the line of scrimmage, then live play with nothing thrown."""
+import math
 import os
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
@@ -478,3 +479,52 @@ def test_renderer_play_call_has_no_aim_wording():
     off = make_view(s, s.human_of(s.down.offense))
     assert "aim" not in r._phase_hint(off).lower() and "throw" not in r._phase_hint(off).lower()
     assert r._button_label(off) in ("Confirm QB spot", "Move QB onto a platform")
+# ---------------------------------------------------------------- level wall just past a barrier edge
+@pytest.mark.parametrize("who", ["wr", "df"])
+@pytest.mark.parametrize("offense", [Team.LEFT, Team.RIGHT])
+@pytest.mark.parametrize("gap", [1.0, 1.5, 2.5])
+@pytest.mark.parametrize("qb_x", [400.0, 400.37, 400.8])
+def test_los_holds_when_a_level_wall_is_just_beyond_the_barrier_edge(who, offense, gap, qb_x):
+    """A level solid resolved before the barrier in the same step used to zero the X velocity, so the barrier was
+    skipped and the Y pass teleported the player on top of it, past the line."""
+    d = offense.attack_dir
+    w = Tuning().player_width
+    if who == "wr":      # the WR runs toward the defense, into the barrier on the far side of the line
+        edge = float(math.ceil(qb_x + d * 0 + w / 2 + 1e-6)) if d > 0 else float(math.floor(qb_x - w / 2 - 1e-6))
+        wall_x = edge + gap if d > 0 else edge - gap - 20
+    else:                # the Defender runs toward the offense, into the barrier on the near side
+        edge = float(math.floor(qb_x - w / 2 - 1e-6)) if d > 0 else float(math.ceil(qb_x + w / 2 + 1e-6))
+        wall_x = edge - gap - 20 if d > 0 else edge + gap
+    s = route_session(offense, qb_x, platforms=[(wall_x, 100, 20, FLOOR - 100)])
+    lock_defense(s)
+    step(s, off=Intent(x_pressed=True))
+    assert s.phase is Phase.PRE_THROW and s.los_x == qb_x
+    for _ in range(TICKS - 2):
+        step(s, off=Intent(move_x=d), dfn=Intent(move_x=-d))
+        check_los(s, d, qb_x)
+    wr, df = actors(s)
+    assert abs((wr if who == "wr" else df).center.x - qb_x) < 2 + w   # pressed against its barrier, not teleported
+# ---------------------------------------------------------------- every level, both humans, full default window
+@pytest.mark.parametrize("name", [f"field_{i:02d}" for i in range(1, 15)])
+def test_los_holds_on_every_level_for_the_full_default_window(name):
+    level = load_level(f"levels/{name}.json")
+    t = Tuning(throw_enabled=False, result_pause_seconds=0.05)
+    assert t.route_window_seconds == 5.0
+    for offense in Team:
+        s = Session(level, t, humans=2, seed=4)
+        d = offense.attack_dir
+        s.match.down = Down(1, offense, s.down.qb_spawn)
+        s._start_play_call()
+        rng = random.Random(f"{name}-{int(offense)}-full")
+        step(s, off=Intent(x_pressed=True), dfn=Intent(z_pressed=True))
+        assert s.phase is Phase.PRE_THROW
+        los = s.los_x
+        assert los is not None
+        for _ in range(int(5.0 * 120) - 2):
+            def rnd(toward):
+                return Intent(move_x=rng.choice((-toward, 0, toward, toward, toward)),
+                              vertical=rng.choice((-1, 0, 1, 1)), jump_pressed=rng.random() < 0.15,
+                              jump_held=rng.random() < 0.3)
+            step(s, off=rnd(d), dfn=rnd(-d))
+            assert s.phase is Phase.PRE_THROW
+            check_los(s, d, los)

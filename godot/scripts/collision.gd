@@ -57,12 +57,13 @@ static func move_aabb(box, body, dt: float, solids: Array, thin: Array = []):
 	return box
 
 static func _move_aabb_step(box, body, dt: float, solids: Array, thin: Array):
-	box = box.shifted(body.vx * dt, 0.0)
+	var vx: float = body.vx   # the push-out direction must survive the first solid zeroing body.vx
+	box = box.shifted(vx * dt, 0.0)
 	for s in solids:
 		if box.overlaps(s):
-			if body.vx > 0.0:
+			if vx > 0.0:
 				box.x = s.left() - box.w
-			elif body.vx < 0.0:
+			elif vx < 0.0:
 				box.x = s.right()
 			body.vx = 0.0
 	var vy: float = body.vy
