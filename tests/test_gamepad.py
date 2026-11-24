@@ -205,7 +205,7 @@ def test_holding_cross_gives_a_full_jump_releasing_it_cuts_it_short():
 
 
 def test_right_stick_points_the_aim_in_sandbox():
-    g = make_game(player=(200, 650), ball=(220, 650))
+    g = make_game(player=(200, 650), ball=(220, 650), throw_enabled=True)
     run(g, ticks=60)
     run(g, Intent(z_pressed=True))
     run(g, Intent(z_pressed=True))

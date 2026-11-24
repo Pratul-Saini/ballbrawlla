@@ -59,7 +59,7 @@ func items() -> Array:
 					Item.new("ONLINE", "go:online")]
 		"freeplay":
 			return [Item.new("EXPLORE", "mode:sandbox", "", "no rules, any level"),
-					Item.new("CATCH PRACTICE", "mode:catch", "", "QB throws, you catch and score, no defender")]
+					Item.new("CATCH PRACTICE", "mode:catch", "", "run your route, then run to score, no defender")]
 		"online":
 			return [Item.new("HOST GAME", "mode:host", _port_reason(), "you get a code to send your friend"),
 					Item.new("JOIN GAME", "go:join", "", "type your friend's code")]

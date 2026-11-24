@@ -11,6 +11,9 @@ var num_players: int
 var players: Array = []
 var ball
 var ball_trail: Array = []   # recent free-ball centers, newest last; empty while the ball is held
+## Extra solids for single players (index in `players`), e.g. the line of scrimmage during the route window. The ball
+## ignores them.
+var barriers := {}
 
 func _init(p_level, tuning, p_num_players: int = 1) -> void:
 	level = p_level
@@ -38,6 +41,7 @@ func reset() -> void:
 		players[i].connected = was_connected[i]
 	ball = Ball.new(level.ball_spawn, t)
 	ball_trail.clear()
+	barriers.clear()
 
 ## Respawn one player (e.g. on join/leave), dropping the ball if they held it.
 func reset_player(pid: int, p_connected: bool = true) -> void:
@@ -52,7 +56,10 @@ func step(intents: Array, dt: float) -> void:
 	for i in mini(players.size(), intents.size()):
 		var p = players[i]
 		if p.connected:
-			p.update(intents[i], dt, level.solids, ball, level.thin, ball_trail)
+			var solids: Array = level.solids
+			if barriers.has(i):
+				solids = level.solids + [barriers[i]]
+			p.update(intents[i], dt, solids, ball, level.thin, ball_trail)
 	_resolve_pickups()
 	ball.update(dt, level.solids, level.thin)
 	if ball.held_by == null:

@@ -117,7 +117,10 @@ def python_client_joins_godot_host() -> bool:
         out = ""
     probe_lines = [l for l in out.splitlines() if l.startswith("PROBE")]
     detail = " | ".join([l for l in r.stdout.splitlines() if l.startswith("PYCLIENT")] + probe_lines + ([r.stderr[-300:]] if r.returncode else []))
-    ok = ("PYCLIENT joined pid 1" in r.stdout and "tuning keys 56" in r.stdout
+    sys.path.insert(0, str(ROOT / "src"))
+    from dataclasses import fields
+    from ballbrawlla.config import Tuning
+    ok = ("PYCLIENT joined pid 1" in r.stdout and f"tuning keys {len(fields(Tuning))}" in r.stdout
           and any("client joined as 1" in l for l in probe_lines)
           and any("remote_inputs_with_movement=" in l and "remote_inputs_with_movement=0" not in l for l in probe_lines)
           and "snaps 0 " not in r.stdout)

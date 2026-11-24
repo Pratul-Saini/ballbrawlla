@@ -4,9 +4,11 @@ The host builds a view per human every frame: its own screen draws view 0,
 and each client is sent only its own view. Hidden information is left out
 of the dict entirely, so a client can't peek at it:
 
-* the offense's throw angle/power is never in the defense's view
+* the offense's throw angle/power is never in the defense's view (and absent for everyone when throwing is off)
 * the defense's Defender spot (during the play call) is never in the offense's view
 
+"throwing" is the tuning switch (False: no aim, the WR runs a route); "los" is the line of scrimmage x while the
+route window locks both sides, else None.
 Local play (both players at one screen) uses `local=True`, which shows both.
 """
 
@@ -59,6 +61,8 @@ def make_view(s: Session, pid: int, local: bool = False) -> dict:
         "winner": None if s.match.winner is None else int(s.match.winner),
         "message": s.message,
         "timer": None,
+        "throwing": s.t.throw_enabled,
+        "los": None,
         "local": local,
     }
 
@@ -78,7 +82,7 @@ def make_view(s: Session, pid: int, local: bool = False) -> dict:
             "def_locked": c.defense_locked,
             "restarts": c.restarts,
         }
-        if local or side == "offense":
+        if s.t.throw_enabled and (local or side == "offense"):
             call["aim"] = [_r(c.aim_angle), _r(c.aim_power)]
         if local or side == "defense":
             df = c.feet(c.def_player)
@@ -103,7 +107,8 @@ def make_view(s: Session, pid: int, local: bool = False) -> dict:
         }
         if s.phase is Phase.PRE_THROW:
             v["timer"] = _r(s.timer)
-            if local or side == "offense":  # your own locked-in throw
+            v["los"] = None if s.los_x is None else _r(s.los_x)
+            if s.t.throw_enabled and (local or side == "offense"):  # your own locked-in throw
                 v["aim"] = [_r(s.qb.aim_angle), _r(s.qb.aim_power)]
         elif s.phase is Phase.LIVE and s.loose_timer is not None:
             v["timer"] = _r(s.loose_timer)

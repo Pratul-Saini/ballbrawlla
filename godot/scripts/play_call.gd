@@ -5,6 +5,9 @@ extends RefCounted
 ## lets the offense pick the spawn): it can only be confirmed while standing on a platform inside the yellow zone;
 ## (2) aim with the mouse, the right stick, or left/right (angle) and up/down (power); X locks in.
 ## Defense: move the Defender the same way; it locks in only while standing on a platform inside its zone.
+## With Tuning.throw_enabled false (the default) there is nothing to aim: step 2 does not exist, Z / X / the button
+## confirms the QB spot and locks the offense in directly (mouse and aim input are ignored), and a down that fixes the
+## QB spot starts with the offense already locked in.
 ## Execution starts as soon as both sides are locked in. If the timer runs out first, the play call restarts.
 
 const Intent = preload("res://scripts/intent.gd")
@@ -74,6 +77,7 @@ func _init(p_down, p_field, tuning, memory = null, defense_auto: bool = false) -
 	var dt_target: Array = memory.def_target.get(dfn, default_def)
 	def_spot = field.spawn_spot(dt_target[0], dt_target[1], def_lo, def_hi)
 	def_player = _player(def_spot, load("res://scripts/teams.gd").attack_dir(dfn))
+	offense_locked = not t.throw_enabled and not down.offense_picks_spawn()   # nothing to decide
 	defense_locked = defense_auto
 
 func _player(spot: Array, facing: int):
@@ -132,6 +136,16 @@ func _update_offense(i, dt: float) -> void:
 	if offense_locked:
 		return
 	var can_place: bool = down.offense_picks_spawn()
+	if not t.throw_enabled:
+		_move(qb_player, i, dt)
+		var nr := _standing_spot(qb_player, qb_lo, qb_hi)
+		qb_ok = nr[1]
+		if qb_ok:
+			qb_spot = nr[0]
+		if (i.z_pressed or i.x_pressed or i.button_pressed) and qb_ok:
+			placing = false
+			offense_locked = true
+		return
 	# Mouse: aiming only (and clicking the QB to go back to moving it)
 	if i.mouse_pressed and i.mouse != null:
 		var qc := qb_center()

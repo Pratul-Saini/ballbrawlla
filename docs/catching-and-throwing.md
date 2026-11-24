@@ -1,5 +1,10 @@
 # Catching, aiming and throwing
 
+> **Throwing is switched off in this version.** `Tuning.throw_enabled` defaults to `False`: nobody aims, the QB does not throw
+> (the QB only marks the ball spot), and the WR carries the ball from the snap through a `route_window_seconds` route window.
+> This page describes the code path that stays in the game behind the switch. Set `throw_enabled = True` in `config.py` (and run
+> `tools/export_parity.py`) to bring it back; `pre_throw_seconds` then sets the free-running time before the automatic throw.
+
 Source: `entities/player.py` (pickup logic, `throw`), `entities/player_states.py` (Aiming), `game.py` (`_resolve_pickups`, `ball_trail`). Tuning values are in `config.py`.
 
 "Catching" is picking the ball up with **Z**. There is no separate catch mechanic. Because the host judges every pickup, the rules are built to forgive timing errors and network lag.
@@ -74,4 +79,4 @@ Details:
 - Z while sliding catches the ball but cannot start aiming.
 - Z while aiming always cancels aiming. It never picks anything up.
 - A player who disconnects while holding the ball drops it where they stood.
-- `throw_enabled = False` disables aiming entirely. You can still pick the ball up.
+- `throw_enabled = False` (the default) disables aiming entirely, the QB's automatic throw and the play-call aim step. `Player.throw()` also does nothing. You can still pick up a ball that is on the ground (sandbox).

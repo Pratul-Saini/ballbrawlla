@@ -181,7 +181,7 @@ def test_double_jump_comes_back_after_landing_from_a_wall():
 
 
 def test_pickup_aim_and_throw():
-    g = make_game(player=(200, 650), ball=(220, 650))
+    g = make_game(player=(200, 650), ball=(220, 650), throw_enabled=True)
     run(g, ticks=60)
     p, b = g.player, g.ball
     run(g, Intent(z_pressed=True))

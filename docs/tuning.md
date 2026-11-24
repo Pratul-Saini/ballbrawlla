@@ -68,11 +68,17 @@ In network play the host's `Tuning` is sent to the joiner, so both sides use the
 | `pickup_radius` | 55 | player-center to ball-center distance for a pickup |
 | `pickup_buffer_time` | 0.1 | seconds a Z press stays armed waiting for the ball. 0 disables |
 | `pickup_grace_time` | 0.1 | seconds a Z press still counts after the ball left reach (host-judged). 0 disables |
-| `throw_enabled` | True | False disables aiming and throwing |
+| `throw_enabled` | False | Master switch. False (the default): no aiming, no QB throw, no play-call aim; the WR carries the ball from the snap and runs a route. True brings the whole throw/catch game back (set it in `config.py`, then run `tools/export_parity.py`) |
 | `aim_rate` | 180 | degrees per second the aim rotates |
 | `power_min` | 300 | minimum throw speed |
 | `power_max` | 1400 | maximum throw speed |
 | `power_rate` | 900 | power change per second while Up or Down is held |
+
+## Play execution
+| Field | Default | Meaning |
+|---|---|---|
+| `route_window_seconds` | 5.0 | no-throw mode: seconds between lock-in and live play. The WR already has the ball, and neither the WR nor the Defender may cross the line of scrimmage until it ends |
+| `pre_throw_seconds` | 10 | throwing mode only (`throw_enabled` True): free running before the QB throws automatically |
 
 ## Derived values (not fields)
 | Property | Value | Meaning |

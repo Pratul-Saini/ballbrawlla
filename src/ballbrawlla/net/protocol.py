@@ -19,7 +19,7 @@ import socket
 
 from ballbrawlla.input import Intent
 
-PROTOCOL_VERSION = 4
+PROTOCOL_VERSION = 5
 DEFAULT_PORT = 50555
 MAX_OUTBOX = 1 << 20  # drop a peer that stops reading rather than buffer forever
 

@@ -11,6 +11,7 @@ from ballbrawlla.config import Tuning
 from ballbrawlla.entities.ball import Ball
 from ballbrawlla.entities.player import Player
 from ballbrawlla.input import Intent
+from ballbrawlla.physics.shapes import AABB
 from ballbrawlla.physics.vec import Vector2
 from ballbrawlla.world.level import Level
 
@@ -23,6 +24,9 @@ class Game:
         self.players: list[Player] = []
         # Recent Free-ball centers (newest last); empty while the ball is Held.
         self.ball_trail: deque[Vector2] = deque(maxlen=tuning.pickup_grace_ticks + 1)
+        # Extra solids for single players (index in `players`), e.g. the line of scrimmage
+        # during the route window. The ball ignores them.
+        self.barriers: dict[int, AABB] = {}
         self.reset()
 
     @property
@@ -40,6 +44,7 @@ class Game:
             p.connected = c
         self.ball = Ball(self.level.ball_spawn, self.t)
         self.ball_trail.clear()
+        self.barriers.clear()
 
     def reset_player(self, pid: int, connected: bool = True) -> None:
         """Respawn one player (e.g. on join/leave), dropping the ball if they held it."""
@@ -51,12 +56,15 @@ class Game:
         self.players[pid].connected = connected
 
     def step(self, intents: Sequence[Intent], dt: float) -> None:
-        for p, intent in zip(self.players, intents):
+        for i, (p, intent) in enumerate(zip(self.players, intents)):
             if p.connected:
+                solids = self.level.solids
+                if i in self.barriers:
+                    solids = [*solids, self.barriers[i]]
                 p.update(
                     intent,
                     dt,
-                    self.level.solids,
+                    solids,
                     self.ball,
                     thin=self.level.thin,
                     ball_trail=self.ball_trail,

@@ -43,6 +43,7 @@ func _diff(names: Array, want: Array, got: Array) -> String:
 func _replay(name: String, tr: Dictionary) -> String:
 	var lv = Level.load_file("res://levels/%s.json" % tr["level"])["level"]
 	var t = Tuning.new()
+	t.throw_enabled = true   # the traces were recorded with throwing on (tools/parity_traces.py)
 	var g = Game.new(lv, t, int(tr["players"]))
 	for i in g.players.size():
 		var p = g.players[i]

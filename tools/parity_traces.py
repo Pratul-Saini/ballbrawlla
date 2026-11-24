@@ -148,7 +148,7 @@ def _boundary_scenarios() -> None:
     the pickup radius (55 px) and the speed below which an impact stops the ball instead of bouncing (40 px/s).
     Placed on open floor of field_01 (x 704..1016 has no platform within 80 px above the floor)."""
     import math
-    t = Tuning()
+    t = Tuning(throw_enabled=True)
     level = load_level(ROOT / "levels" / "field_01.json")
     floor_y = level.height - 32
     center_y = floor_y - t.player_height / 2          # a player standing on the floor
@@ -203,7 +203,7 @@ def apply_setup(g: Game, setup: dict) -> None:
 
 
 def run_scenario(name: str, level: str, players: int, setup: dict, inputs: list) -> dict:
-    t = Tuning()
+    t = Tuning(throw_enabled=True)
     g = Game(load_level(ROOT / "levels" / f"{level}.json"), t, players)
     apply_setup(g, setup)
     # What the GDScript side must reproduce: the final setup after apply_setup, written as plain positions.

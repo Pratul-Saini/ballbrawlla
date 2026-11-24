@@ -194,7 +194,7 @@ class Player:
         return Vector2(math.cos(a), -math.sin(a))  # y-down screen coords
 
     def throw(self) -> None:
-        if self.held_ball is None:
+        if self.held_ball is None or not self.t.throw_enabled:
             return
         d = self.aim_direction()
         if abs(d.x) > 1e-3:

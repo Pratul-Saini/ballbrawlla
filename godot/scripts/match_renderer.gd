@@ -41,6 +41,7 @@ var GOAL_LINE := c8(200, 200, 210)
 var YARD_TICK := c8(56, 60, 72)
 var LABEL := c8(150, 155, 170)
 var FLOOR_PAINT := c8(52, 56, 68)
+var LOS_LINE := c8(255, 220, 60)           # the line of scrimmage during the route window
 const END_ZONE_ALPHA := 28
 const THIN_EDGE_HEIGHT := 3.0
 const MINIMAP_H := 40.0
@@ -50,6 +51,7 @@ const FRAME_MARGIN := Vector2(260, 200)    # world px kept around the players wh
 const SHOW_ME_BOX := false                 # white box around the player you control (always shown if there is no art)
 const SHOW_TAG_RING := false               # green circle: how close an opponent must get to tag you
 const CLOCK_STALE := 1.0                   # s: an animation clock not drawn for this long is dropped (a new down, a left player)
+const COUNTDOWN_PX := 120                  # the route window's whole-second countdown
 const RUN_MIN_SPEED := 20.0                # |vx| above this counts as running (which way he faces)
 
 var level
@@ -208,6 +210,7 @@ func draw(p_ci: CanvasItem, p_size: Vector2, view: Dictionary, fps: float, dt: f
 	ci.draw_rect(Rect2(Vector2.ZERO, size), BG)
 	_draw_field()
 	_draw_platforms()
+	_draw_los(view)
 	var phase: String = view["phase"]
 	if phase == "play_call":
 		_draw_play_call(view)
@@ -313,6 +316,14 @@ func _draw_platforms() -> void:
 			ci.draw_rect(Rect2(rect.position.x, rect.position.y, rect.size.x, minf(THIN_EDGE_HEIGHT, rect.size.y)), THIN_EDGE)
 		else:
 			ci.draw_rect(rect, PLATFORM)
+
+## The line of scrimmage: a wall neither runner may cross until the route window ends.
+func _draw_los(view: Dictionary) -> void:
+	var los = view.get("los")
+	if los == null:
+		return
+	var sx := roundf(_w(float(los), 0.0).x)
+	ci.draw_line(Vector2(sx, 0.0), Vector2(sx, size.y), LOS_LINE, 3.0)
 
 ## Draws one player. Returns where the ball goes (the near hand, in screen px), or Vector2.INF when drawn as a box.
 ## `facing` is 1 or -1. `motion` is {state, vx, vy} (the engine's state name and velocity, px/s) and picks the animation
@@ -557,6 +568,12 @@ func _draw_hud(view: Dictionary, fps: float, status: String, controls: String) -
 		if view["phase"] == "game_over":
 			var who := "Press" if local else "Host: press"
 			_text("%s %s for a new match" % [who, key_names["restart"]], Vector2(size.x / 2.0, size.y / 2.0 - 20.0), DIM, 16, true)
+	if view["phase"] == "pre_throw" and not view.get("throwing", true) and view.get("timer") != null:
+		var digit := str(maxi(1, ceili(float(view["timer"]))))
+		var dw := font.get_string_size(digit, HORIZONTAL_ALIGNMENT_LEFT, -1, COUNTDOWN_PX).x
+		var pill := Rect2(size.x / 2.0 - (dw + 40.0) / 2.0, hud_h + 8.0, dw + 40.0, COUNTDOWN_PX * 1.0 + 4.0)
+		ci.draw_style_box(_pill_style(), pill)
+		_text(digit, Vector2(size.x / 2.0, pill.position.y), LOS_LINE, COUNTDOWN_PX, true)
 	button_rect = Rect2()
 	var label := _button_label(view)
 	if label != "":
@@ -569,6 +586,12 @@ func _draw_hud(view: Dictionary, fps: float, status: String, controls: String) -
 	if debug:
 		_draw_debug(view, fps)
 
+func _pill_style() -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = c8(16, 17, 22, 200)
+	sb.set_corner_radius_all(10)
+	return sb
+
 func _button_label(view: Dictionary) -> String:
 	var call = view.get("call")
 	if view["phase"] != "play_call" or call == null:
@@ -578,7 +601,7 @@ func _button_label(view: Dictionary) -> String:
 			return ""
 		if call["placing"]:
 			return "Confirm QB spot" if call["qb_ok"] else "Move QB onto a platform"
-		return "Lock in throw"
+		return "Lock in throw" if view.get("throwing", true) else ""
 	if call["def_locked"]:
 		return ""
 	return "Lock in Defender" if call.get("def_ok", true) else "Move onto a platform"
@@ -605,10 +628,21 @@ func _phase_hint(view: Dictionary, p_side: String = "", head: bool = true) -> St
 			return prefix + "Locked in - waiting for the other side"
 		if side == "defense":
 			return prefix + "Run the Defender to a platform in your zone - %s / button: lock in" % grab
+		if not view.get("throwing", true):
+			return prefix + "Run the QB to a platform in the yellow zone - %s / %s / button: confirm the QB spot" % [grab, lock]
 		if call["placing"]:
 			return prefix + "Run the QB to a platform in the yellow zone - %s / button: confirm - %s: lock in" % [grab, lock]
 		var back := " - %s / click QB: move it" % grab if call["picks"] else ""
 		return prefix + "Aim (mouse, right stick or keys) - %s / button: lock in" % lock + back
+	if phase == "pre_throw" and not view.get("throwing", true):
+		var lead := "ROUTE %ss - " % _fmt1(timer, 4)
+		var wr := "run your route, you can't cross the line yet"
+		var df := "hold the line, you can't cross yet"
+		if not view.get("defender", true):
+			return lead + wr
+		if view.get("local", false):
+			return lead + "WR: %s / DEF: %s" % [wr, df]
+		return lead + (wr if side == "offense" else df)
 	if phase == "pre_throw":
 		if not view.get("defender", true):
 			return "THROW IN %s - get open" % [_fmt1(timer, 4) + "s"]
@@ -637,7 +671,7 @@ func _state_hint(view: Dictionary) -> String:
 		var restarted := "  (play call restarted)" if call["restarts"] > 0 else ""
 		return "PLAY CALL %ss   [%s]%s" % [_fmt1(timer, 4), locks, restarted]
 	if phase == "pre_throw":
-		return "THROW IN %ss" % _fmt1(timer, 4)
+		return ("THROW IN %ss" if view.get("throwing", true) else "ROUTE %ss") % _fmt1(timer, 4)
 	if phase == "live":
 		var holder = view["ball"]["holder"]
 		if holder == null:

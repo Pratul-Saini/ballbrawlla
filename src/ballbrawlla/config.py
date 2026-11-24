@@ -68,7 +68,7 @@ class Tuning:
     pickup_radius: float = 55         # player-center to ball-center distance for Z pickup
     pickup_buffer_time: float = 0.1   # seconds a Z press stays armed waiting for the ball to arrive
     pickup_grace_time: float = 0.1    # seconds a Z press still counts after the ball left reach (host-judged)
-    throw_enabled: bool = True        # set False to disable the throw phase for testing
+    throw_enabled: bool = False       # master switch: False = no aiming, no QB throw; the WR runs a route (see route_window_seconds)
     aim_rate: float = 180             # degrees per second (left/right)
     power_min: float = 300
     power_max: float = 1400
@@ -90,7 +90,8 @@ class Tuning:
     aim_drag_radius: float = 200      # px, mouse distance from the QB that maps to max power
 
     # --- Play execution ---
-    pre_throw_seconds: float = 10     # free running before the QB throws automatically
+    pre_throw_seconds: float = 10     # free running before the QB throws automatically (throw_enabled only)
+    route_window_seconds: float = 5.0  # no-throw mode: seconds between lock-in and live play; neither side may cross the line of scrimmage
     ball_stopped_speed: float = 8     # px/s; a resting ball slower than this has "landed"
     loose_ball_seconds: float = 3     # after landing, play is dead if nobody picks it up
     tag_radius: float = 40            # px, center to center

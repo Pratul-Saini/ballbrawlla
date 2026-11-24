@@ -15,7 +15,7 @@ Options go after the double dash. A launch that cannot work prints one line and 
 | Option | What it does |
 |---|---|
 | `--level=field_05` | practice on that level (alone) |
-| `--catch` | catch practice: football rules, no defender |
+| `--catch` | catch practice: football rules, no defender (with throwing off, a route then run to score) |
 | `--local` | two players on one screen |
 | `--sandbox` | free play (the arena unless `--level` says otherwise) |
 | `--host` | host a game: shows an invite code (`--port=N` changes the port, `--no-router` skips opening it on the router, `--relay=ADDR` uses a relay server) |
@@ -43,7 +43,9 @@ inputs and compare:
 - every tuning number, all 15 levels, every launch check and error message, invite-code handling
 - the physics: 60+ scenarios, including random play on 9 levels, compared tick by tick
 - the rules: field geometry, 120 down transitions, 14 whole matches
-- 16 whole football sessions played by bots, compared every few ticks: phases, scores, messages, the play call, every player
+- 23 whole football sessions played by bots, compared every few ticks: phases, scores, messages, the play call, every player
+  and the line of scrimmage. 18 run with throwing on (`throw_enabled`); the 5 `route_*` ones use the default no-throw
+  rules (5 s route window, neither side may cross the line of scrimmage) with a shorter window
 - the "view" each player is sent over the network, including that the defense never sees the offense's throw
 
 The tests were checked by breaking the code on purpose and seeing them fail (a number off by 0.1%, a rule one step
